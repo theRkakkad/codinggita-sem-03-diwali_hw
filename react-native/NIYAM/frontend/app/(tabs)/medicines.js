@@ -22,6 +22,7 @@ import {
   INITIAL_MEDICINES,
   FILTER_OPTIONS,
 } from '../../constants/medicinesData';
+import MedicineFormModal from '../../components/medicines/MedicineFormModal';
 
 // NIYAM Medication Management Screen (Phase 09)
 // Provides searchable, filterable prescription list with interactive details, pause/resume, and delete actions.
@@ -32,6 +33,11 @@ export default function MedicinesScreen() {
   const [activeFilter, setActiveFilter] = useState('All');
   const [selectedMedicine, setSelectedMedicine] = useState(null);
   const [feedbackBanner, setFeedbackBanner] = useState(null);
+
+  // Form modal states (Phase 10)
+  const [isFormVisible, setIsFormVisible] = useState(false);
+  const [formMode, setFormMode] = useState('add'); // 'add' | 'edit'
+  const [editingMedicine, setEditingMedicine] = useState(null);
 
   // Active medicine count
   const activeCount = useMemo(
@@ -70,22 +76,42 @@ export default function MedicinesScreen() {
     });
   }, [medicines, activeFilter, searchQuery]);
 
-  // Placeholder handler for Add Medicine
+  // Add Medicine handler (Phase 10)
   const handleAddMedicine = () => {
-    Alert.alert(
-      'Add Medicine',
-      'The medication setup wizard will be available in Phase 10.',
-      [{ text: 'OK' }]
-    );
+    setFormMode('add');
+    setEditingMedicine(null);
+    setIsFormVisible(true);
   };
 
-  // Placeholder handler for Edit Medicine
+  // Edit Medicine handler (Phase 10)
   const handleEditMedicine = () => {
-    Alert.alert(
-      'Edit Medicine',
-      'Medication editing will be available in Phase 10.',
-      [{ text: 'OK' }]
-    );
+    if (!selectedMedicine) return;
+    setFormMode('edit');
+    setEditingMedicine(selectedMedicine);
+    setIsFormVisible(true);
+  };
+
+  // Save handler for Add / Edit flows
+  const handleSaveMedicine = (savedData) => {
+    if (formMode === 'add') {
+      // Add flow: prepend newly created medicine
+      setMedicines((prev) => [savedData, ...prev]);
+      setFeedbackBanner(`Added ${savedData.name} (${savedData.dosage}) to your medicines.`);
+    } else {
+      // Edit flow: preserve existing ID and status, update fields in list
+      setMedicines((prev) =>
+        prev.map((item) => (item.id === savedData.id ? savedData : item))
+      );
+
+      // Keep detail modal updated if open
+      if (selectedMedicine && selectedMedicine.id === savedData.id) {
+        setSelectedMedicine(savedData);
+      }
+      setFeedbackBanner(`Updated ${savedData.name} successfully.`);
+    }
+
+    setIsFormVisible(false);
+    setTimeout(() => setFeedbackBanner(null), 3500);
   };
 
   // Pause / Resume handler
@@ -415,6 +441,15 @@ export default function MedicinesScreen() {
                     </AppText>
                   </View>
 
+                  {selectedMedicine.endDate ? (
+                    <View style={styles.modalRow}>
+                      <AppText variant="secondary" color={Colors.textMuted}>End Date:</AppText>
+                      <AppText variant="secondary" color={Colors.textPrimary} style={styles.boldText}>
+                        {selectedMedicine.endDate}
+                      </AppText>
+                    </View>
+                  ) : null}
+
                   <View style={styles.modalRow}>
                     <AppText variant="secondary" color={Colors.textMuted}>Status:</AppText>
                     <View
@@ -507,6 +542,15 @@ export default function MedicinesScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* 6. REUSABLE ADD / EDIT MEDICATION FORM MODAL (PHASE 10) */}
+      <MedicineFormModal
+        visible={isFormVisible}
+        mode={formMode}
+        initialData={editingMedicine}
+        onClose={() => setIsFormVisible(false)}
+        onSave={handleSaveMedicine}
+      />
     </SafeAreaView>
   );
 }
