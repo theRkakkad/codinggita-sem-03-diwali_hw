@@ -1,11 +1,11 @@
 import React from 'react';
-import { Pressable, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { Pressable, Text, StyleSheet, ActivityIndicator, View } from 'react-native';
 import { Colors } from '../../constants/colors';
 import { Typography } from '../../constants/typography';
 import { Spacing } from '../../constants/spacing';
 import { Radius } from '../../constants/radius';
 
-// Reusable button component providing consistent dimensions and tactile feedback.
+// Reusable button component providing consistent dimensions, icons, and tactile feedback.
 export default function AppButton({
   title,
   onPress,
@@ -13,6 +13,8 @@ export default function AppButton({
   size = 'md',          // 'md' | 'sm'
   disabled = false,
   loading = false,
+  icon = null,
+  iconRight = null,
   style,
   textStyle,
 }) {
@@ -56,7 +58,11 @@ export default function AppButton({
       {loading ? (
         <ActivityIndicator size="small" color={spinnerColor} />
       ) : (
-        <Text style={textStyles}>{title}</Text>
+        <>
+          {icon && <View style={styles.iconLeft}>{icon}</View>}
+          <Text style={textStyles}>{title}</Text>
+          {iconRight && <View style={styles.iconRight}>{iconRight}</View>}
+        </>
       )}
     </Pressable>
   );
@@ -120,5 +126,15 @@ const styles = StyleSheet.create({
   },
   disabledText: {
     color: Colors.textMuted,
+  },
+  iconLeft: {
+    marginRight: Spacing.xs,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconRight: {
+    marginLeft: Spacing.xs,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

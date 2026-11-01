@@ -1,6 +1,7 @@
 import React from 'react';
-import { Text, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { Colors } from '../../constants/colors';
 import { Typography } from '../../constants/typography';
@@ -25,8 +26,12 @@ export default function TabLayout() {
         options={{
           title: 'Dashboard',
           tabBarLabel: 'Dashboard',
-          tabBarIcon: ({ color }) => (
-            <Text style={[styles.tabIcon, { color }]}>◫</Text>
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "grid" : "grid-outline"}
+              size={22}
+              color={color}
+            />
           ),
         }}
       />
@@ -38,7 +43,11 @@ export default function TabLayout() {
           title: 'Medicines',
           tabBarLabel: 'Medicines',
           tabBarIcon: ({ color }) => (
-            <Text style={[styles.tabIcon, { color }]}>💊</Text>
+            <MaterialCommunityIcons
+              name="pill"
+              size={23}
+              color={color}
+            />
           ),
         }}
       />
@@ -49,8 +58,12 @@ export default function TabLayout() {
         options={{
           title: 'Calendar',
           tabBarLabel: 'Calendar',
-          tabBarIcon: ({ color }) => (
-            <Text style={[styles.tabIcon, { color }]}>📅</Text>
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "calendar" : "calendar-outline"}
+              size={22}
+              color={color}
+            />
           ),
         }}
       />
@@ -61,8 +74,12 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarLabel: 'Profile',
-          tabBarIcon: ({ color }) => (
-            <Text style={[styles.tabIcon, { color }]}>👤</Text>
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "person" : "person-outline"}
+              size={22}
+              color={color}
+            />
           ),
         }}
       />
@@ -87,8 +104,5 @@ const styles = StyleSheet.create({
     fontSize: Typography.size.xs,
     fontWeight: Typography.weight.medium,
     marginTop: 2,
-  },
-  tabIcon: {
-    fontSize: 18,
   },
 });

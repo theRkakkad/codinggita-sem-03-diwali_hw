@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router';
 import { Colors } from '../../constants/colors';
 
-// Authentication layout managing Welcome, Login, and Registration screens.
+// Authentication layout managing Onboarding, Welcome, Login, and Registration screens.
 export default function AuthLayout() {
   return (
     <Stack
@@ -11,6 +11,7 @@ export default function AuthLayout() {
         animation: 'slide_from_right',
       }}
     >
+      <Stack.Screen name="onboarding" />
       <Stack.Screen name="welcome" />
       <Stack.Screen name="login" />
       <Stack.Screen name="register" />

@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
 
-// Root index route automatically redirects to the welcome screen.
+// Root entry point redirects to the cinematic Namaste welcome screen.
 export default function Index() {
   return <Redirect href="/(auth)/welcome" />;
 }
