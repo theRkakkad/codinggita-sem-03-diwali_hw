@@ -1,8 +1,9 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { Colors } from '../constants/colors';
 
-// The RootLayout sets up the main navigation container for the entire application.
-// We configure it to hide headers by default so each screen can manage its own header.
+// Root navigation stack for NIYAM.
+// Organizes the app into authentication (auth) and main tab navigation (tabs).
 export default function RootLayout() {
   return (
     <>
@@ -10,9 +11,14 @@ export default function RootLayout() {
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: '#121417' },
+          contentStyle: { backgroundColor: Colors.background },
+          animation: 'fade',
         }}
-      />
+      >
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      </Stack>
     </>
   );
 }
