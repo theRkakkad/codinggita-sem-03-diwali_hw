@@ -1,16 +1,18 @@
 # Dependencies
 node_modules/
-*/node_modules/
+**/node_modules/
 
 # Expo
 .expo/
-frontend/.expo/
+**/.expo/
 dist/
 web-build/
 
 # Native builds
-frontend/ios/
-frontend/android/
+ios/
+android/
+**/ios/
+**/android/
 *.orig.*
 *.jks
 *.p8
