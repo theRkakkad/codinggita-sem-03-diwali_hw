@@ -1,19 +1,28 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors } from '../../constants/colors';
 import { Typography } from '../../constants/typography';
 
 // Bottom Tab Navigation Layout for the main NIYAM application.
-// Contains 4 tabs: Dashboard, Medicines, Calendar, Profile.
+// Apple-themed floating glass tab bar with safe-area spacing to avoid system gesture collision.
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+  const bottomInset = insets.bottom > 0 ? insets.bottom + 8 : (Platform.OS === 'ios' ? 16 : 20);
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            bottom: bottomInset,
+          },
+        ],
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textMuted,
         tabBarLabelStyle: styles.tabBarLabel,
@@ -89,20 +98,31 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: Colors.surface,
-    borderTopColor: Colors.border,
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(34, 39, 37, 0.88)', // Apple-style dark translucent glass
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
     height: 64,
-    paddingBottom: 8,
-    paddingTop: 8,
-    elevation: 8,
+    borderRadius: 32,
+    paddingBottom: 6,
+    paddingTop: 6,
+    elevation: 12,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
   },
   tabBarItem: {
     paddingVertical: 2,
   },
   tabBarLabel: {
-    fontSize: Typography.size.xs,
+    fontSize: 11,
     fontWeight: Typography.weight.medium,
     marginTop: 2,
   },
 });
+

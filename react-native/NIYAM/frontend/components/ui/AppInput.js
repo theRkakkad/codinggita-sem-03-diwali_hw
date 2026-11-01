@@ -35,6 +35,7 @@ export default function AppInput({
   error,
   isPassword = false,
   leftIcon,
+  trailingAction,
   style,
   inputStyle,
   ...props
@@ -116,6 +117,7 @@ export default function AppInput({
             onPress={() => setIsPasswordVisible(!isPasswordVisible)}
             hitSlop={10}
             style={styles.eyeButton}
+            accessibilityLabel={isPasswordVisible ? 'Hide password' : 'Show password'}
           >
             <Ionicons
               name={isPasswordVisible ? 'eye-outline' : 'eye-off-outline'}
@@ -123,6 +125,11 @@ export default function AppInput({
               color={Colors.textMuted}
             />
           </Pressable>
+        )}
+
+        {/* Optional Custom Trailing Action */}
+        {!isPassword && trailingAction && (
+          <View style={styles.trailingContainer}>{trailingAction}</View>
         )}
       </View>
 
@@ -174,6 +181,11 @@ const styles = StyleSheet.create({
   eyeButton: {
     padding: Spacing.xxs,
     marginLeft: Spacing.xs,
+  },
+  trailingContainer: {
+    marginLeft: Spacing.xs,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   errorText: {
     marginTop: 4,

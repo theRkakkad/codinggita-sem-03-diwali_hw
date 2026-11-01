@@ -80,43 +80,49 @@ export default function LoginScreen() {
   const validateForm = () => {
     const newErrors = {};
     if (!email.trim()) {
-      newErrors.email = 'Please enter your email or username.';
-    } else if (email.includes('@') && !/^\S+@\S+\.\S+$/.test(email)) {
+      newErrors.email = 'Email is required.';
+    } else if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
       newErrors.email = 'Please enter a valid email address.';
     }
 
     if (!password) {
-      newErrors.password = 'Please enter your password.';
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters.';
+      newErrors.password = 'Password is required.';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  const isFormFilled = email.trim().length > 0 && password.length > 0;
+  const isValidEmail = /^\S+@\S+\.\S+$/.test(email.trim());
+  const canSubmit = isFormFilled && isValidEmail && !isLoading;
+
   const handleLogin = () => {
     if (!validateForm()) return;
 
     setIsLoading(true);
-    // Simulate brief network authentication transition
+    // Temporary demo message as required by Phase 07
     setTimeout(() => {
       setIsLoading(false);
-      router.replace('/(tabs)');
-    }, 700);
+      Alert.alert(
+        'Validation Successful',
+        'Welcome back! Frontend credentials validation passed. Backend authentication will be connected in a future phase.',
+        [{ text: 'OK' }]
+      );
+    }, 500);
   };
 
   // Demo auto-fill helper for seamless college evaluation
   const handleQuickFill = () => {
     setEmail('patient@niyam.health');
-    setPassword('discipline2026');
+    setPassword('Discipline#2026');
     setErrors({});
   };
 
   const handleForgotPassword = () => {
     Alert.alert(
-      'Password Reset',
-      'In the active application, a secure reset link will be sent to your registered email.',
+      'Password Recovery',
+      'Password recovery will be available later when backend services are active.',
       [{ text: 'OK' }]
     );
   };
@@ -156,7 +162,7 @@ export default function LoginScreen() {
             <View style={styles.badge}>
               <AppText style={styles.badgeHindi}>नियम</AppText>
               <View style={styles.badgeDot} />
-              <AppText variant="caption" style={styles.badgeCategory}>HealthTech</AppText>
+              <AppText variant="caption" style={styles.badgeCategory}>NIYAM</AppText>
             </View>
           </Animated.View>
 
@@ -171,13 +177,13 @@ export default function LoginScreen() {
             ]}
           >
             <AppText variant="label" color={Colors.primary}>
-              Welcome Back
+              NIYAM
             </AppText>
             <AppText variant="h1" style={styles.mainTitle}>
-              Log in to NIYAM
+              Welcome back.
             </AppText>
             <AppText variant="secondary" color={Colors.textSecondary} style={styles.subtitle}>
-              Keep your medication routines organised and never miss a scheduled dose.
+              Continue your journey towards a consistent routine.
             </AppText>
           </Animated.View>
 
@@ -189,9 +195,9 @@ export default function LoginScreen() {
             }}
           >
             <AppCard style={styles.formCard}>
-              {/* Email / Username Input */}
+              {/* Email Input */}
               <AppInput
-                label="Email or Username"
+                label="Email"
                 placeholder="name@example.com"
                 value={email}
                 onChangeText={(text) => {
@@ -222,16 +228,17 @@ export default function LoginScreen() {
               <View style={styles.forgotRow}>
                 <Pressable onPress={handleForgotPassword} hitSlop={8}>
                   <AppText variant="caption" color={Colors.primary} style={styles.forgotText}>
-                    Forgot Password?
+                    Forgot password?
                   </AppText>
                 </Pressable>
               </View>
 
               {/* Primary Submit Button */}
               <AppButton
-                title={isLoading ? "Authenticating..." : "Log In"}
+                title={isLoading ? "Signing in..." : "Sign In"}
                 variant="primary"
                 size="md"
+                disabled={!canSubmit}
                 loading={isLoading}
                 onPress={handleLogin}
                 style={styles.loginButton}
@@ -255,9 +262,9 @@ export default function LoginScreen() {
               style={styles.registerLink}
             >
               <AppText variant="secondary" color={Colors.textSecondary}>
-                Don't have an account?{' '}
+                New to NIYAM?{' '}
                 <AppText variant="secondary" color={Colors.primary} style={styles.linkBold}>
-                  Create one now
+                  Create account
                 </AppText>
               </AppText>
             </Pressable>

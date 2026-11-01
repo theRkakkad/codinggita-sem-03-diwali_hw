@@ -83,50 +83,61 @@ export default function RegisterScreen() {
     const newErrors = {};
 
     if (!fullName.trim()) {
-      newErrors.fullName = 'Please enter your full name.';
+      newErrors.fullName = 'Full name is required.';
     }
 
     if (!email.trim()) {
-      newErrors.email = 'Please enter your email.';
-    } else if (!/^\S+@\S+\.\S+$/.test(email)) {
+      newErrors.email = 'Email address is required.';
+    } else if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
       newErrors.email = 'Please enter a valid email address.';
     }
 
     if (!password) {
-      newErrors.password = 'Please create a password.';
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters.';
+      newErrors.password = 'Password is required.';
+    } else if (password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters.';
     }
 
-    if (password !== confirmPassword) {
+    if (!confirmPassword) {
+      newErrors.confirmPassword = 'Please confirm your password.';
+    } else if (password !== confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match.';
     }
 
     if (!agreeTerms) {
-      newErrors.terms = 'Please accept the discipline agreement to proceed.';
+      newErrors.terms = 'You must agree to the Terms and Privacy Policy.';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  const isFormFilled = fullName.trim().length > 0 && email.trim().length > 0 && password.length >= 8 && confirmPassword.length >= 8;
+  const isValidEmail = /^\S+@\S+\.\S+$/.test(email.trim());
+  const isPasswordMatch = password.length > 0 && password === confirmPassword;
+  const canSubmit = isFormFilled && isValidEmail && isPasswordMatch && agreeTerms && !isLoading;
+
   const handleRegister = () => {
     if (!validateForm()) return;
 
     setIsLoading(true);
-    // Simulate account setup and transition to the application
+    // Temporary demo message as required by Phase 07
     setTimeout(() => {
       setIsLoading(false);
-      router.replace('/(tabs)');
-    }, 700);
+      Alert.alert(
+        'Validation Successful',
+        'Account details validated successfully! In Phase 07, registration is frontend UI only. Backend account creation will be connected in Phase 08.',
+        [{ text: 'OK' }]
+      );
+    }, 500);
   };
 
   // Demo auto-fill helper for fast evaluator verification
   const handleQuickFill = () => {
     setFullName('Aarav Sharma');
     setEmail('aarav.sharma@niyam.health');
-    setPassword('n1yamHealth#26');
-    setConfirmPassword('n1yamHealth#26');
+    setPassword('Discipline#2026');
+    setConfirmPassword('Discipline#2026');
     setAgreeTerms(true);
     setErrors({});
   };
@@ -166,7 +177,7 @@ export default function RegisterScreen() {
             <View style={styles.badge}>
               <AppText style={styles.badgeHindi}>नियम</AppText>
               <View style={styles.badgeDot} />
-              <AppText variant="caption" style={styles.badgeCategory}>HealthTech</AppText>
+              <AppText variant="caption" style={styles.badgeCategory}>NIYAM</AppText>
             </View>
           </Animated.View>
 
@@ -181,13 +192,13 @@ export default function RegisterScreen() {
             ]}
           >
             <AppText variant="label" color={Colors.primary}>
-              Join NIYAM
+              NIYAM
             </AppText>
             <AppText variant="h1" style={styles.mainTitle}>
-              Create your account
+              Create your account.
             </AppText>
             <AppText variant="secondary" color={Colors.textSecondary} style={styles.subtitle}>
-              Take control of your prescriptions and build a dependable medication routine.
+              Start building a more consistent medication routine.
             </AppText>
           </Animated.View>
 
@@ -231,7 +242,7 @@ export default function RegisterScreen() {
               {/* Password Input */}
               <AppInput
                 label="Password"
-                placeholder="At least 6 characters"
+                placeholder="Minimum 8 characters"
                 value={password}
                 onChangeText={(text) => {
                   setPassword(text);
@@ -256,9 +267,12 @@ export default function RegisterScreen() {
                 error={errors.confirmPassword}
               />
 
-              {/* Discipline Commitment Agreement */}
+              {/* Terms and Privacy Policy Agreement */}
               <Pressable
-                onPress={() => setAgreeTerms(!agreeTerms)}
+                onPress={() => {
+                  setAgreeTerms(!agreeTerms);
+                  if (errors.terms) setErrors((prev) => ({ ...prev, terms: null }));
+                }}
                 style={styles.agreementRow}
               >
                 <View style={[styles.checkbox, agreeTerms && styles.checkboxActive]}>
@@ -267,7 +281,7 @@ export default function RegisterScreen() {
                   )}
                 </View>
                 <AppText variant="secondary" color={Colors.textSecondary} style={styles.agreementText}>
-                  I commit to taking every dose on time in discipline and adherence.
+                  I agree to the Terms and Privacy Policy.
                 </AppText>
               </Pressable>
               {errors.terms && (
@@ -278,9 +292,10 @@ export default function RegisterScreen() {
 
               {/* Submit Registration Button */}
               <AppButton
-                title={isLoading ? "Setting Up Account..." : "Create Account"}
+                title={isLoading ? "Creating Account..." : "Create Account"}
                 variant="primary"
                 size="md"
+                disabled={!canSubmit}
                 loading={isLoading}
                 onPress={handleRegister}
                 style={styles.submitButton}
@@ -306,7 +321,7 @@ export default function RegisterScreen() {
               <AppText variant="secondary" color={Colors.textSecondary}>
                 Already have an account?{' '}
                 <AppText variant="secondary" color={Colors.primary} style={styles.linkBold}>
-                  Log in
+                  Sign in
                 </AppText>
               </AppText>
             </Pressable>

@@ -69,7 +69,8 @@ const styles = StyleSheet.create({
   },
   container: {
     paddingHorizontal: Spacing.screenHorizontal,
-    paddingVertical: Spacing.screenVertical,
+    paddingTop: Spacing.screenVertical,
+    paddingBottom: 110,
   },
   header: {
     marginTop: Spacing.sm,
