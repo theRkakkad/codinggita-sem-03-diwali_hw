@@ -3,6 +3,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const healthRoutes = require('./routes/healthRoutes');
+const authRoutes = require('./routes/authRoutes');
 
 // Load environment variables from .env file
 dotenv.config();
@@ -16,8 +17,9 @@ app.use(cors());
 // Parse incoming JSON request bodies
 app.use(express.json());
 
-// Mount API health check route
+// Mount API routes
 app.use('/api/health', healthRoutes);
+app.use('/api/auth', authRoutes);
 
 // Root verification route
 app.get('/', (req, res) => {
