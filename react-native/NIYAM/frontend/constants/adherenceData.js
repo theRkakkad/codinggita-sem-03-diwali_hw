@@ -1,0 +1,824 @@
+// NIYAM Medication Adherence & History Sample Data (Phase 12)
+// Realistic synthetic history supporting All Taken, Pending, Skipped, Confirmed Missed, Unconfirmed, and Empty days.
+//
+// Adherence Formula:
+// Adherence = (Taken doses / Total eligible scheduled doses) * 100
+// Unconfirmed and pending doses are NOT counted as missed.
+
+export const ADHERENCE_RECORDS = {
+  // NOVEMBER 2026 (Current Active Month)
+  '2026-11-01': [
+    {
+      id: 'dose-20261101-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '10:02 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261101-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'taken',
+      actualTime: '02:08 PM',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261101-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:15 PM',
+      category: 'Heart Health',
+    },
+  ],
+
+  // Today: Nov 02, 2026 — Demonstrates pending & taken doses
+  '2026-11-02': [
+    {
+      id: 'dose-20261102-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '09:55 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261102-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'pending',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261102-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'pending',
+      category: 'Heart Health',
+    },
+  ],
+
+  '2026-11-03': [
+    {
+      id: 'dose-20261103-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '10:12 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261103-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'taken',
+      actualTime: '02:00 PM',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261103-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:25 PM',
+      category: 'Heart Health',
+    },
+  ],
+
+  // Nov 04: Demonstrates a skipped dose scenario
+  '2026-11-04': [
+    {
+      id: 'dose-20261104-1',
+      medicineId: 'med-5',
+      name: 'Calcium Supplement',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '09:00 AM',
+      status: 'skipped',
+      skippedReason: 'Fasting before routine clinical blood test',
+      category: 'Bone Health',
+    },
+    {
+      id: 'dose-20261104-2',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '10:30 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261104-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:05 PM',
+      category: 'Heart Health',
+    },
+  ],
+
+  '2026-11-05': [
+    {
+      id: 'dose-20261105-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '09:50 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261105-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'taken',
+      actualTime: '02:15 PM',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261105-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:10 PM',
+      category: 'Heart Health',
+    },
+  ],
+
+  // Nov 06: Demonstrates a user-confirmed missed dose scenario
+  '2026-11-06': [
+    {
+      id: 'dose-20261106-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'missed',
+      missedReason: 'Away from home without daily travel kit',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261106-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'taken',
+      actualTime: '02:22 PM',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261106-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:14 PM',
+      category: 'Heart Health',
+    },
+  ],
+
+  '2026-11-07': [
+    {
+      id: 'dose-20261107-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '10:00 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261107-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'taken',
+      actualTime: '01:55 PM',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261107-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:20 PM',
+      category: 'Heart Health',
+    },
+  ],
+
+  // Nov 08: Demonstrates unconfirmed doses (NOT treated as missed)
+  '2026-11-08': [
+    {
+      id: 'dose-20261108-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '10:05 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261108-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'unconfirmed',
+      notes: 'No response recorded during afternoon prompt',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261108-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'unconfirmed',
+      notes: 'No response recorded during evening prompt',
+      category: 'Heart Health',
+    },
+  ],
+
+  // Nov 09: Intentionally empty to test date with no activity
+
+  '2026-11-10': [
+    {
+      id: 'dose-20261110-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '10:10 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261110-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'taken',
+      actualTime: '02:05 PM',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261110-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:30 PM',
+      category: 'Heart Health',
+    },
+  ],
+
+  // Nov 11: Missed dose scenario
+  '2026-11-11': [
+    {
+      id: 'dose-20261111-1',
+      medicineId: 'med-5',
+      name: 'Calcium Supplement',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '09:00 AM',
+      status: 'taken',
+      actualTime: '09:15 AM',
+      category: 'Bone Health',
+    },
+    {
+      id: 'dose-20261111-2',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'missed',
+      missedReason: 'Prescription refill pending pickup from pharmacy',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261111-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:45 PM',
+      category: 'Heart Health',
+    },
+  ],
+
+  '2026-11-12': [
+    {
+      id: 'dose-20261112-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '09:45 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261112-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'taken',
+      actualTime: '02:10 PM',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261112-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:00 PM',
+      category: 'Heart Health',
+    },
+  ],
+
+  // Nov 13: Skipped dose
+  '2026-11-13': [
+    {
+      id: 'dose-20261113-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '10:15 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261113-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'skipped',
+      skippedReason: 'Doctor recommended skipping before afternoon allergy scan',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261113-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:10 PM',
+      category: 'Heart Health',
+    },
+  ],
+
+  '2026-11-14': [
+    {
+      id: 'dose-20261114-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '10:00 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261114-2',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:15 PM',
+      category: 'Heart Health',
+    },
+  ],
+
+  // OCTOBER 2026 (For testing previous month navigation)
+  '2026-10-25': [
+    {
+      id: 'dose-20261025-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '10:00 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261025-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'taken',
+      actualTime: '02:05 PM',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261025-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:20 PM',
+      category: 'Heart Health',
+    },
+  ],
+  '2026-10-26': [
+    {
+      id: 'dose-20261026-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '09:55 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261026-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'taken',
+      actualTime: '02:10 PM',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261026-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:15 PM',
+      category: 'Heart Health',
+    },
+  ],
+  '2026-10-27': [
+    {
+      id: 'dose-20261027-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '10:00 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261027-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'skipped',
+      skippedReason: 'Mild nausea after meal; resumed next day',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261027-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:30 PM',
+      category: 'Heart Health',
+    },
+  ],
+  '2026-10-28': [
+    {
+      id: 'dose-20261028-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '10:05 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261028-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'taken',
+      actualTime: '02:00 PM',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261028-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:15 PM',
+      category: 'Heart Health',
+    },
+  ],
+  '2026-10-29': [
+    {
+      id: 'dose-20261029-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'missed',
+      missedReason: 'Travel delay; arrived late at hotel',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261029-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'taken',
+      actualTime: '03:15 PM',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261029-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:20 PM',
+      category: 'Heart Health',
+    },
+  ],
+  '2026-10-30': [
+    {
+      id: 'dose-20261030-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '10:00 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261030-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'taken',
+      actualTime: '02:02 PM',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261030-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:10 PM',
+      category: 'Heart Health',
+    },
+  ],
+  '2026-10-31': [
+    {
+      id: 'dose-20261031-1',
+      medicineId: 'med-3',
+      name: 'Vitamin C',
+      dosage: '1 tablet',
+      type: 'Tablet',
+      scheduledTime: '10:00 AM',
+      status: 'taken',
+      actualTime: '10:14 AM',
+      category: 'Immunity',
+    },
+    {
+      id: 'dose-20261031-2',
+      medicineId: 'med-1',
+      name: 'Vitamin D3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '02:00 PM',
+      status: 'unconfirmed',
+      notes: 'No response recorded on Halloween evening',
+      category: 'Supplement',
+    },
+    {
+      id: 'dose-20261031-3',
+      medicineId: 'med-2',
+      name: 'Omega-3',
+      dosage: '1 capsule',
+      type: 'Capsule',
+      scheduledTime: '08:00 PM',
+      status: 'taken',
+      actualTime: '08:40 PM',
+      category: 'Heart Health',
+    },
+  ],
+};
+
+/**
+ * Calculate detailed statistics for a specific single day's dose events.
+ *
+ * Adherence = (Taken / Eligible) * 100
+ * where Eligible = Taken + Skipped + Confirmed Missed.
+ * Pending & Unconfirmed are excluded from eligible so they are never counted as failures.
+ */
+export function calculateDayStats(doses = []) {
+  const total = doses.length;
+  const taken = doses.filter((d) => d.status === 'taken').length;
+  const skipped = doses.filter((d) => d.status === 'skipped').length;
+  const missed = doses.filter((d) => d.status === 'missed').length;
+  const pending = doses.filter((d) => d.status === 'pending').length;
+  const unconfirmed = doses.filter((d) => d.status === 'unconfirmed').length;
+
+  const eligible = taken + skipped + missed;
+  const adherenceRate = eligible > 0 ? Math.round((taken / eligible) * 100) : null;
+
+  // Visual indicator color mapping according to Phase 12 specification:
+  // - Green: All scheduled doses taken.
+  // - Amber: Some doses remain pending or were skipped.
+  // - Muted red: At least one user-confirmed missed dose.
+  // - Grey: No recorded activity or unconfirmed history.
+  let indicatorState = 'none'; // 'all_taken' | 'pending_or_skipped' | 'missed' | 'unconfirmed' | 'none'
+
+  if (total === 0) {
+    indicatorState = 'none';
+  } else if (missed > 0) {
+    indicatorState = 'missed'; // Muted red
+  } else if (pending > 0 || skipped > 0) {
+    indicatorState = 'pending_or_skipped'; // Amber
+  } else if (taken === total && total > 0) {
+    indicatorState = 'all_taken'; // Green
+  } else if (unconfirmed > 0) {
+    indicatorState = 'unconfirmed'; // Grey
+  }
+
+  return {
+    total,
+    taken,
+    skipped,
+    missed,
+    pending,
+    unconfirmed,
+    eligible,
+    adherenceRate,
+    indicatorState,
+  };
+}
+
+/**
+ * Calculate dynamic monthly statistics for a given year and month (0-indexed).
+ * Derived purely from sample records without hardcoded totals.
+ */
+export function calculateMonthStats(year, monthIndex, records = ADHERENCE_RECORDS) {
+  const monthStr = String(monthIndex + 1).padStart(2, '0');
+  const prefix = `${year}-${monthStr}`;
+
+  let totalScheduled = 0;
+  let taken = 0;
+  let skipped = 0;
+  let missed = 0;
+  let pending = 0;
+  let unconfirmed = 0;
+  let daysWithActivity = 0;
+
+  Object.entries(records).forEach(([dateKey, dayDoses]) => {
+    if (dateKey.startsWith(prefix) && Array.isArray(dayDoses) && dayDoses.length > 0) {
+      daysWithActivity += 1;
+      totalScheduled += dayDoses.length;
+      dayDoses.forEach((dose) => {
+        if (dose.status === 'taken') taken += 1;
+        else if (dose.status === 'skipped') skipped += 1;
+        else if (dose.status === 'missed') missed += 1;
+        else if (dose.status === 'pending') pending += 1;
+        else if (dose.status === 'unconfirmed') unconfirmed += 1;
+      });
+    }
+  });
+
+  const totalEligible = taken + skipped + missed;
+  const overallAdherence = totalEligible > 0 ? Math.round((taken / totalEligible) * 100) : null;
+
+  return {
+    year,
+    monthIndex,
+    totalScheduled,
+    totalEligible,
+    taken,
+    skipped,
+    missed,
+    pending,
+    unconfirmed,
+    overallAdherence,
+    daysWithActivity,
+  };
+}
+
+export const MONTH_NAMES_FULL = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+export const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
