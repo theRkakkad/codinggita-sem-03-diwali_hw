@@ -139,6 +139,8 @@ const medicineSchema = new mongoose.Schema(
       fileType: { type: String, trim: true },
       fileSize: { type: Number },
       fileUrl: { type: String, trim: true },
+      storageKey: { type: String, trim: true },
+      uploadedAt: { type: Date },
     },
   },
   {

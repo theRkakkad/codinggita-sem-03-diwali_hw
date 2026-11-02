@@ -1,5 +1,6 @@
 const express = require('express');
 const authMiddleware = require('../middleware/authMiddleware');
+const { uploadSinglePrescription } = require('../middleware/uploadMiddleware');
 const {
   createMedicine,
   getMedicines,
@@ -7,6 +8,11 @@ const {
   updateMedicine,
   deleteMedicine,
 } = require('../controllers/medicineController');
+const {
+  uploadPrescription,
+  getPrescription,
+  deletePrescription,
+} = require('../controllers/prescriptionController');
 
 const router = express.Router();
 
@@ -48,4 +54,30 @@ router.put('/:id', updateMedicine);
  */
 router.delete('/:id', deleteMedicine);
 
+/**
+ * Prescription Attachment Routes (Phase 17)
+ */
+
+/**
+ * @route   POST /api/medicines/:id/prescription
+ * @desc    Upload or replace prescription document (JPG, PNG, PDF <= 5MB)
+ * @access  Private
+ */
+router.post('/:id/prescription', uploadSinglePrescription, uploadPrescription);
+
+/**
+ * @route   GET /api/medicines/:id/prescription
+ * @desc    View or download prescription document (strictly isolated to owner)
+ * @access  Private
+ */
+router.get('/:id/prescription', getPrescription);
+
+/**
+ * @route   DELETE /api/medicines/:id/prescription
+ * @desc    Delete prescription document and clear metadata (strictly isolated to owner)
+ * @access  Private
+ */
+router.delete('/:id/prescription', deletePrescription);
+
 module.exports = router;
+
