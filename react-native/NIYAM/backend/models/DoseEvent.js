@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 
 // Supported dose statuses per NIYAM specification
 const DOSE_STATUSES = [
+  'pending',
+  'taken',
+  'skipped',
+  'missed',
+  'unconfirmed',
   'Pending',
   'Taken',
   'Skipped',
