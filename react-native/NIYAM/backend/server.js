@@ -10,16 +10,16 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Enable Cross-Origin Resource Sharing so our mobile app can communicate with the API
+// Enable Cross-Origin Resource Sharing for mobile client communication
 app.use(cors());
 
 // Parse incoming JSON request bodies
 app.use(express.json());
 
-// Mount API routes
+// Mount API health check route
 app.use('/api/health', healthRoutes);
 
-// Root route for quick verification in a web browser
+// Root verification route
 app.get('/', (req, res) => {
   res.json({
     application: 'NIYAM',
@@ -31,18 +31,25 @@ app.get('/', (req, res) => {
 // Start the server only after successfully connecting to MongoDB
 const startServer = async () => {
   try {
-    // Connect to database
+    // 1. Establish database connection before accepting traffic
     await connectDB();
 
-    // Start Express listening for requests
-    app.listen(PORT, () => {
+    // 2. Start Express HTTP listener
+    const server = app.listen(PORT, () => {
       console.log(`NIYAM Backend server running on port ${PORT}`);
       console.log(`Health endpoint: http://localhost:${PORT}/api/health`);
     });
+
+    return server;
   } catch (error) {
     console.error(`Failed to start server: ${error.message}`);
     process.exit(1);
   }
 };
 
-startServer();
+// Auto-start when executed directly
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = { app, startServer };
