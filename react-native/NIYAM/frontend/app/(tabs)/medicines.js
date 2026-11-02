@@ -7,6 +7,7 @@ import {
   TextInput,
   Modal,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -23,6 +24,8 @@ import {
   FILTER_OPTIONS,
 } from '../../constants/medicinesData';
 import MedicineFormModal from '../../components/medicines/MedicineFormModal';
+import PrescriptionImageViewerModal from '../../components/medicines/PrescriptionImageViewerModal';
+import { formatFileSize } from '../../components/medicines/PrescriptionAttachmentPicker';
 
 // NIYAM Medication Management Screen (Phase 09)
 // Provides searchable, filterable prescription list with interactive details, pause/resume, and delete actions.
@@ -38,6 +41,9 @@ export default function MedicinesScreen() {
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [formMode, setFormMode] = useState('add'); // 'add' | 'edit'
   const [editingMedicine, setEditingMedicine] = useState(null);
+
+  // Prescription image preview viewer state (Phase 11)
+  const [viewerAttachment, setViewerAttachment] = useState(null);
 
   // Active medicine count
   const activeCount = useMemo(
@@ -484,18 +490,133 @@ export default function MedicinesScreen() {
                     </AppText>
                   </View>
 
-                  {/* Prescription Attachment Placeholder */}
-                  <View style={styles.attachmentCard}>
-                    <Ionicons name="document-text-outline" size={20} color={Colors.primary} style={styles.docIcon} />
-                    <View style={styles.docInfo}>
-                      <AppText variant="secondary" color={Colors.textPrimary} style={styles.boldText}>
-                        {selectedMedicine.rxDocument}
-                      </AppText>
-                      <AppText variant="caption" color={Colors.textMuted}>
-                        Prescription attachment preview
-                      </AppText>
-                    </View>
-                  </View>
+                  {/* Prescription Attachment (Phase 11) */}
+                  {(() => {
+                    const attachment =
+                      selectedMedicine.attachment ||
+                      (selectedMedicine.rxDocument
+                        ? {
+                            name: selectedMedicine.rxDocument,
+                            type: /\.(jpg|jpeg|png|webp|heic)$/i.test(
+                              selectedMedicine.rxDocument
+                            )
+                              ? 'image'
+                              : 'pdf',
+                            mimeType: /\.(jpg|jpeg|png|webp|heic)$/i.test(
+                              selectedMedicine.rxDocument
+                            )
+                              ? 'image/jpeg'
+                              : 'application/pdf',
+                            size: null,
+                            uri: null,
+                          }
+                        : null);
+
+                    if (!attachment) {
+                      return (
+                        <View style={styles.noAttachmentCard}>
+                          <Ionicons
+                            name="document-outline"
+                            size={18}
+                            color={Colors.textMuted}
+                            style={styles.docIcon}
+                          />
+                          <View style={styles.docInfo}>
+                            <AppText variant="secondary" color={Colors.textMuted}>
+                              No prescription document attached
+                            </AppText>
+                          </View>
+                        </View>
+                      );
+                    }
+
+                    const isImg = attachment.type === 'image';
+                    const sizeLabel = formatFileSize(attachment.size);
+
+                    return (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.attachmentCard,
+                          pressed && styles.attachmentCardPressed,
+                        ]}
+                        onPress={() => {
+                          if (isImg) {
+                            setViewerAttachment(attachment);
+                          } else {
+                            Alert.alert(
+                              'Prescription Document',
+                              `File: ${attachment.name}\n${
+                                sizeLabel ? `Size: ${sizeLabel}\n` : ''
+                              }Format: PDF Document\n\nDirect in-app PDF rendering is not supported on this platform. This prescription file remains safely attached to your medication record for personal reference.`,
+                              [{ text: 'Close', style: 'default' }]
+                            );
+                          }
+                        }}
+                        accessibilityLabel={`Prescription attachment: ${attachment.name}`}
+                      >
+                        {isImg ? (
+                          <View style={styles.detailThumbnailBox}>
+                            {attachment.uri ? (
+                              <Image
+                                source={{ uri: attachment.uri }}
+                                style={styles.detailThumbnail}
+                                resizeMode="cover"
+                              />
+                            ) : (
+                              <MaterialCommunityIcons
+                                name="image-outline"
+                                size={22}
+                                color={Colors.primary}
+                              />
+                            )}
+                            <View style={styles.detailZoomIcon}>
+                              <Ionicons name="expand-outline" size={10} color="#FFFFFF" />
+                            </View>
+                          </View>
+                        ) : (
+                          <View style={styles.detailPdfBox}>
+                            <MaterialCommunityIcons
+                              name="file-pdf-box"
+                              size={24}
+                              color={Colors.primary}
+                            />
+                          </View>
+                        )}
+
+                        <View style={styles.docInfo}>
+                          <AppText
+                            variant="secondary"
+                            color={Colors.textPrimary}
+                            numberOfLines={1}
+                            ellipsizeMode="middle"
+                            style={styles.boldText}
+                          >
+                            {attachment.name}
+                          </AppText>
+                          <View style={styles.docSubRow}>
+                            <AppText variant="caption" color={Colors.textMuted}>
+                              {isImg ? 'Image attachment' : 'PDF document'}
+                              {sizeLabel ? ` • ${sizeLabel}` : ''}
+                            </AppText>
+                            <AppText
+                              variant="caption"
+                              color={Colors.primary}
+                              style={styles.viewLinkText}
+                            >
+                              {isImg ? 'Tap to view' : 'Tap for info'}
+                            </AppText>
+                          </View>
+                        </View>
+
+                        <Ionicons
+                          name={isImg ? 'eye-outline' : 'information-circle-outline'}
+                          size={18}
+                          color={Colors.primary}
+                          style={{ marginLeft: 6 }}
+                        />
+                      </Pressable>
+                    );
+                  })()}
                 </View>
 
                 {/* Modal Action Controls */}
@@ -550,6 +671,15 @@ export default function MedicinesScreen() {
         initialData={editingMedicine}
         onClose={() => setIsFormVisible(false)}
         onSave={handleSaveMedicine}
+      />
+
+      {/* 7. PRESCRIPTION IMAGE LIGHTBOX MODAL (PHASE 11) */}
+      <PrescriptionImageViewerModal
+        visible={!!viewerAttachment}
+        imageUri={viewerAttachment?.uri}
+        fileName={viewerAttachment?.name || 'Prescription Image'}
+        fileSizeText={formatFileSize(viewerAttachment?.size)}
+        onClose={() => setViewerAttachment(null)}
       />
     </SafeAreaView>
   );
@@ -854,10 +984,69 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(230, 162, 60, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(230, 162, 60, 0.2)',
+    borderColor: 'rgba(230, 162, 60, 0.25)',
     borderRadius: Radius.md,
     padding: Spacing.xs,
     marginTop: Spacing.xxs,
+  },
+  attachmentCardPressed: {
+    backgroundColor: 'rgba(230, 162, 60, 0.15)',
+  },
+  noAttachmentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    padding: Spacing.xs,
+    marginTop: Spacing.xxs,
+  },
+  detailThumbnailBox: {
+    width: 40,
+    height: 40,
+    borderRadius: Radius.xs,
+    backgroundColor: Colors.surfaceSecondary,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.xs,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    position: 'relative',
+  },
+  detailThumbnail: {
+    width: '100%',
+    height: '100%',
+  },
+  detailZoomIcon: {
+    position: 'absolute',
+    bottom: 1,
+    right: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 3,
+    padding: 1,
+  },
+  detailPdfBox: {
+    width: 40,
+    height: 40,
+    borderRadius: Radius.xs,
+    backgroundColor: 'rgba(230, 162, 60, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(230, 162, 60, 0.3)',
+  },
+  docSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 1,
+  },
+  viewLinkText: {
+    fontWeight: '700',
+    fontSize: 10,
   },
   docIcon: {
     marginRight: Spacing.xs,

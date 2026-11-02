@@ -15,6 +15,13 @@ export const INITIAL_MEDICINES = [
     instructions: 'Take 1 capsule with food after lunch for optimal absorption.',
     category: 'Supplement',
     rxDocument: 'Rx_VitaminD3_DrSharma.pdf',
+    attachment: {
+      name: 'Rx_VitaminD3_DrSharma.pdf',
+      type: 'pdf',
+      mimeType: 'application/pdf',
+      size: 184320, // 180 KB
+      uri: null,
+    },
   },
   {
     id: 'med-2',
@@ -27,7 +34,14 @@ export const INITIAL_MEDICINES = [
     startDate: 'Oct 01, 2026',
     instructions: 'Take 1 capsule with dinner or evening meal.',
     category: 'Heart Health',
-    rxDocument: 'Rx_CardioCare_2026.pdf',
+    rxDocument: 'Rx_CardioCare_Scan.jpg',
+    attachment: {
+      name: 'Rx_CardioCare_Scan.jpg',
+      type: 'image',
+      mimeType: 'image/jpeg',
+      size: 358400, // 350 KB
+      uri: null,
+    },
   },
   {
     id: 'med-3',
@@ -41,6 +55,13 @@ export const INITIAL_MEDICINES = [
     instructions: 'Take with a glass of water before noon.',
     category: 'Immunity',
     rxDocument: 'Rx_ImmunityBoost.pdf',
+    attachment: {
+      name: 'Rx_ImmunityBoost.pdf',
+      type: 'pdf',
+      mimeType: 'application/pdf',
+      size: 245760, // 240 KB
+      uri: null,
+    },
   },
   {
     id: 'med-4',
@@ -53,7 +74,8 @@ export const INITIAL_MEDICINES = [
     startDate: 'Oct 25, 2026',
     instructions: 'For occasional headache or mild fever. Maximum 3 tablets daily.',
     category: 'Analgesic',
-    rxDocument: 'Rx_SOS_GeneralPhysician.pdf',
+    rxDocument: null,
+    attachment: null, // Example of medicine saved without prescription attachment
   },
   {
     id: 'med-5',
@@ -67,6 +89,13 @@ export const INITIAL_MEDICINES = [
     instructions: 'Temporarily paused under clinical review. Resume upon doctor advice.',
     category: 'Bone Health',
     rxDocument: 'Rx_Orthopaedic_Review.pdf',
+    attachment: {
+      name: 'Rx_Orthopaedic_Review.pdf',
+      type: 'pdf',
+      mimeType: 'application/pdf',
+      size: 312000,
+      uri: null,
+    },
   },
   {
     id: 'med-6',
@@ -80,6 +109,13 @@ export const INITIAL_MEDICINES = [
     instructions: 'Completed 30-day micronutrient replenishment course.',
     category: 'Supplement',
     rxDocument: 'Rx_NutrientCourse_Sep.pdf',
+    attachment: {
+      name: 'Rx_NutrientCourse_Sep.pdf',
+      type: 'pdf',
+      mimeType: 'application/pdf',
+      size: 153600,
+      uri: null,
+    },
   },
 ];
 

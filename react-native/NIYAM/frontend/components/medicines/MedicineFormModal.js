@@ -18,6 +18,7 @@ import { Radius } from '../../constants/radius';
 import { Typography } from '../../constants/typography';
 import AppText from '../ui/AppText';
 import AppButton from '../ui/AppButton';
+import PrescriptionAttachmentPicker from './PrescriptionAttachmentPicker';
 
 // Available Medicine Types with their respective vector icon configurations
 const MEDICINE_TYPES = [
@@ -104,6 +105,7 @@ export default function MedicineFormModal({
   const [reminderTimes, setReminderTimes] = useState(['09:00 AM']);
   const [startDate, setStartDate] = useState(formatDisplayDate(new Date()));
   const [endDate, setEndDate] = useState('');
+  const [attachment, setAttachment] = useState(null); // Phase 11: Prescription attachment metadata
 
   // Validation error states
   const [errors, setErrors] = useState({});
@@ -120,6 +122,22 @@ export default function MedicineFormModal({
         setFrequency(initialData.frequency || 'Once daily');
         setStartDate(initialData.startDate || formatDisplayDate(new Date()));
         setEndDate(initialData.endDate || '');
+
+        // Populate existing prescription attachment if available (Phase 11)
+        if (initialData.attachment) {
+          setAttachment(initialData.attachment);
+        } else if (initialData.rxDocument) {
+          const isImg = /\.(jpg|jpeg|png|webp|heic)$/i.test(initialData.rxDocument);
+          setAttachment({
+            name: initialData.rxDocument,
+            type: isImg ? 'image' : 'pdf',
+            mimeType: isImg ? 'image/jpeg' : 'application/pdf',
+            size: null,
+            uri: null,
+          });
+        } else {
+          setAttachment(null);
+        }
 
         // Parse existing time string into slot array
         if (initialData.frequency === 'As needed') {
@@ -156,6 +174,7 @@ export default function MedicineFormModal({
         setReminderTimes(['09:00 AM']);
         setStartDate(formatDisplayDate(new Date()));
         setEndDate('');
+        setAttachment(null); // Clean attachment state for new medicine
       }
       setErrors({});
       setIsSubmitting(false);
@@ -289,7 +308,8 @@ export default function MedicineFormModal({
           instructions.trim() || 'Take as prescribed by physician.',
         category:
           type === 'Capsule' || type === 'Tablet' ? 'Prescription' : type,
-        rxDocument: `Rx_${name.trim().replace(/\s+/g, '')}.pdf`,
+        attachment: attachment ? { ...attachment } : null,
+        rxDocument: attachment ? attachment.name : null,
       };
       onSave(newMedicine);
     } else {
@@ -308,9 +328,8 @@ export default function MedicineFormModal({
         id: initialData.id,
         status: initialData.status, // Preserve status strictly
         category: initialData.category || 'Prescription',
-        rxDocument:
-          initialData.rxDocument ||
-          `Rx_${name.trim().replace(/\s+/g, '')}.pdf`,
+        attachment: attachment ? { ...attachment } : null,
+        rxDocument: attachment ? attachment.name : null,
       };
       onSave(updatedMedicine);
     }
@@ -946,6 +965,14 @@ export default function MedicineFormModal({
                   </AppText>
                 )}
               </View>
+            </View>
+
+            {/* 8. PRESCRIPTION DOCUMENT ATTACHMENT (PHASE 11) */}
+            <View style={styles.fieldSection}>
+              <PrescriptionAttachmentPicker
+                attachment={attachment}
+                onAttachmentChange={setAttachment}
+              />
             </View>
           </ScrollView>
 
