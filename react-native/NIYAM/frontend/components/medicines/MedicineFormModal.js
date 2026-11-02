@@ -295,12 +295,12 @@ export default function MedicineFormModal({
 
     if (mode === 'add') {
       const newMedicine = {
-        id: `med-${Date.now()}`,
         name: name.trim(),
         dosage: dosage.trim(),
         type,
         frequency,
         time: formattedTime,
+        reminderTimes: frequency === 'As needed' ? [] : reminderTimes,
         status: 'Active', // Default status for newly created prescriptions
         startDate: startDate.trim(),
         endDate: endDate.trim() ? endDate.trim() : undefined,
@@ -321,11 +321,12 @@ export default function MedicineFormModal({
         type,
         frequency,
         time: formattedTime,
+        reminderTimes: frequency === 'As needed' ? [] : reminderTimes,
         startDate: startDate.trim(),
         endDate: endDate.trim() ? endDate.trim() : undefined,
         instructions:
           instructions.trim() || 'Take as prescribed by physician.',
-        id: initialData.id,
+        id: initialData.id || initialData._id,
         status: initialData.status, // Preserve status strictly
         category: initialData.category || 'Prescription',
         attachment: attachment ? { ...attachment } : null,

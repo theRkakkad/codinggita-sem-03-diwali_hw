@@ -22,10 +22,12 @@ import AppText from '../../components/ui/AppText';
 import AppButton from '../../components/ui/AppButton';
 import AppCard from '../../components/ui/AppCard';
 import AppInput from '../../components/ui/AppInput';
+import { useAuth } from '../../context/AuthContext';
 
 // Premium Registration Screen with Staggered Entrance Animations & Vector Icons.
 export default function RegisterScreen() {
   const router = useRouter();
+  const { register } = useAuth();
 
   // Form states
   const [fullName, setFullName] = useState('');
@@ -35,6 +37,7 @@ export default function RegisterScreen() {
   const [agreeTerms, setAgreeTerms] = useState(true);
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+  const [apiError, setApiError] = useState(null);
 
   // Entrance animations
   const headerFadeAnim = useRef(new Animated.Value(0)).current;
@@ -118,19 +121,21 @@ export default function RegisterScreen() {
   const isPasswordMatch = password.length > 0 && password === confirmPassword;
   const canSubmit = isFormFilled && isValidEmail && isPasswordMatch && agreeTerms && !isLoading;
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!validateForm()) return;
 
+    setApiError(null);
     setIsLoading(true);
-    // Temporary demo message as required by Phase 07
-    setTimeout(() => {
+
+    try {
+      await register(fullName.trim(), email.trim(), password);
+      // Navigate to dashboard after successful registration
+      router.replace('/(tabs)');
+    } catch (err) {
+      setApiError(err.message || 'Registration failed. Please check your details.');
+    } finally {
       setIsLoading(false);
-      Alert.alert(
-        'Validation Successful',
-        'Account details validated successfully! In Phase 07, registration is frontend UI only. Backend account creation will be connected in Phase 08.',
-        [{ text: 'OK' }]
-      );
-    }, 500);
+    }
   };
 
   // Demo auto-fill helper for fast evaluator verification
@@ -211,6 +216,16 @@ export default function RegisterScreen() {
             }}
           >
             <AppCard style={styles.formCard}>
+              {/* API Error Feedback Banner */}
+              {apiError && (
+                <View style={styles.errorBanner}>
+                  <Ionicons name="alert-circle-outline" size={18} color={Colors.danger} style={styles.errorIcon} />
+                  <AppText variant="caption" color={Colors.danger} style={styles.errorBannerText}>
+                    {apiError}
+                  </AppText>
+                </View>
+              )}
+
               {/* Full Name Input */}
               <AppInput
                 label="Full Name"
@@ -219,6 +234,7 @@ export default function RegisterScreen() {
                 onChangeText={(text) => {
                   setFullName(text);
                   if (errors.fullName) setErrors((prev) => ({ ...prev, fullName: null }));
+                  if (apiError) setApiError(null);
                 }}
                 leftIcon="person"
                 autoCapitalize="words"
@@ -409,6 +425,24 @@ const styles = StyleSheet.create({
   formCard: {
     padding: Spacing.cardPaddingLarge,
     marginBottom: Spacing.lg,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.28)',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    marginBottom: Spacing.md,
+  },
+  errorIcon: {
+    marginRight: Spacing.xs,
+  },
+  errorBannerText: {
+    flex: 1,
+    lineHeight: 18,
   },
   agreementRow: {
     flexDirection: 'row',

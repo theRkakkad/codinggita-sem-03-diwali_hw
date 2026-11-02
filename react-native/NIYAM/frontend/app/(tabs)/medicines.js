@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -8,6 +8,8 @@ import {
   Modal,
   Alert,
   Image,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -20,18 +22,21 @@ import AppText from '../../components/ui/AppText';
 import AppButton from '../../components/ui/AppButton';
 import AppCard from '../../components/ui/AppCard';
 import {
-  INITIAL_MEDICINES,
   FILTER_OPTIONS,
 } from '../../constants/medicinesData';
 import MedicineFormModal from '../../components/medicines/MedicineFormModal';
 import PrescriptionImageViewerModal from '../../components/medicines/PrescriptionImageViewerModal';
 import { formatFileSize } from '../../components/medicines/PrescriptionAttachmentPicker';
+import { medicineService } from '../../services/medicineService';
 
-// NIYAM Medication Management Screen (Phase 09)
-// Provides searchable, filterable prescription list with interactive details, pause/resume, and delete actions.
+// NIYAM Medication Management Screen (Phase 09 & Phase 19 Integration)
+// Provides searchable, filterable prescription list with interactive details, pause/resume, and delete actions connected to MongoDB.
 export default function MedicinesScreen() {
   // Local state for medicines list and UI controls
-  const [medicines, setMedicines] = useState(INITIAL_MEDICINES);
+  const [medicines, setMedicines] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [apiError, setApiError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
   const [selectedMedicine, setSelectedMedicine] = useState(null);
@@ -82,6 +87,31 @@ export default function MedicinesScreen() {
     });
   }, [medicines, activeFilter, searchQuery]);
 
+  // Load medicines from MongoDB via medicineService
+  const loadMedicines = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    setApiError(null);
+
+    try {
+      const data = await medicineService.getMedicines();
+      setMedicines(data);
+    } catch (err) {
+      console.warn('Load medicines error:', err.message);
+      setApiError(err.message || 'Unable to load medicines from server.');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMedicines();
+  }, [loadMedicines]);
+
   // Add Medicine handler (Phase 10)
   const handleAddMedicine = () => {
     setFormMode('add');
@@ -97,58 +127,68 @@ export default function MedicinesScreen() {
     setIsFormVisible(true);
   };
 
-  // Save handler for Add / Edit flows
-  const handleSaveMedicine = (savedData) => {
-    if (formMode === 'add') {
-      // Add flow: prepend newly created medicine
-      setMedicines((prev) => [savedData, ...prev]);
-      setFeedbackBanner(`Added ${savedData.name} (${savedData.dosage}) to your medicines.`);
-    } else {
-      // Edit flow: preserve existing ID and status, update fields in list
+  // Save handler for Add / Edit flows connected to backend
+  const handleSaveMedicine = async (savedData) => {
+    try {
+      if (formMode === 'add') {
+        const created = await medicineService.createMedicine(savedData);
+        setMedicines((prev) => [created, ...prev]);
+        setFeedbackBanner(`Added ${created.name} (${created.dosage}) to your medicines.`);
+      } else {
+        const id = savedData.id || savedData._id;
+        const updated = await medicineService.updateMedicine(id, savedData);
+        setMedicines((prev) =>
+          prev.map((item) => ((item.id === id || item._id === id) ? updated : item))
+        );
+
+        if (selectedMedicine && (selectedMedicine.id === id || selectedMedicine._id === id)) {
+          setSelectedMedicine(updated);
+        }
+        setFeedbackBanner(`Updated ${updated.name} successfully.`);
+      }
+
+      setIsFormVisible(false);
+      setTimeout(() => setFeedbackBanner(null), 3500);
+    } catch (err) {
+      Alert.alert('Save Failed', err.message || 'Failed to save medication.');
+    }
+  };
+
+  // Pause / Resume handler connected to backend
+  const handleTogglePause = async (medId) => {
+    const med = medicines.find((m) => m.id === medId || m._id === medId);
+    if (!med) return;
+
+    const id = med.id || med._id;
+    const newStatus = med.status === 'Active' ? 'Paused' : 'Active';
+
+    try {
+      const updated = await medicineService.updateMedicine(id, { status: newStatus });
       setMedicines((prev) =>
-        prev.map((item) => (item.id === savedData.id ? savedData : item))
+        prev.map((item) => ((item.id === id || item._id === id) ? updated : item))
       );
 
-      // Keep detail modal updated if open
-      if (selectedMedicine && selectedMedicine.id === savedData.id) {
-        setSelectedMedicine(savedData);
+      if (selectedMedicine && (selectedMedicine.id === id || selectedMedicine._id === id)) {
+        setSelectedMedicine(updated);
       }
-      setFeedbackBanner(`Updated ${savedData.name} successfully.`);
-    }
 
-    setIsFormVisible(false);
-    setTimeout(() => setFeedbackBanner(null), 3500);
+      setFeedbackBanner(
+        newStatus === 'Paused'
+          ? `Paused ${med.name}. Daily dose reminders suspended.`
+          : `Resumed ${med.name}. Daily routine activated.`
+      );
+      setTimeout(() => setFeedbackBanner(null), 3500);
+    } catch (err) {
+      Alert.alert('Update Failed', err.message || 'Failed to update medication status.');
+    }
   };
 
-  // Pause / Resume handler
-  const handleTogglePause = (medId) => {
-    const med = medicines.find((m) => m.id === medId);
-    if (!med) return;
-
-    const newStatus = med.status === 'Active' ? 'Paused' : 'Active';
-    setMedicines((prev) =>
-      prev.map((item) =>
-        item.id === medId ? { ...item, status: newStatus } : item
-      )
-    );
-
-    // Update selected modal item
-    if (selectedMedicine && selectedMedicine.id === medId) {
-      setSelectedMedicine((prev) => ({ ...prev, status: newStatus }));
-    }
-
-    setFeedbackBanner(
-      newStatus === 'Paused'
-        ? `Paused ${med.name}. Daily dose reminders suspended.`
-        : `Resumed ${med.name}. Daily routine activated.`
-    );
-    setTimeout(() => setFeedbackBanner(null), 3500);
-  };
-
-  // Delete Medicine handler with confirmation
+  // Delete Medicine handler with confirmation connected to backend
   const handleDeleteMedicine = (medId) => {
-    const med = medicines.find((m) => m.id === medId);
+    const med = medicines.find((m) => m.id === medId || m._id === medId);
     if (!med) return;
+
+    const id = med.id || med._id;
 
     Alert.alert(
       'Delete Medicine',
@@ -158,11 +198,16 @@ export default function MedicinesScreen() {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            setMedicines((prev) => prev.filter((item) => item.id !== medId));
-            setSelectedMedicine(null);
-            setFeedbackBanner(`Removed ${med.name} from your list.`);
-            setTimeout(() => setFeedbackBanner(null), 3500);
+          onPress: async () => {
+            try {
+              await medicineService.deleteMedicine(id);
+              setMedicines((prev) => prev.filter((item) => item.id !== id && item._id !== id));
+              setSelectedMedicine(null);
+              setFeedbackBanner(`Removed ${med.name} from your list.`);
+              setTimeout(() => setFeedbackBanner(null), 3500);
+            } catch (err) {
+              Alert.alert('Delete Failed', err.message || 'Failed to delete medicine.');
+            }
           },
         },
       ]
@@ -175,6 +220,14 @@ export default function MedicinesScreen() {
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => loadMedicines(true)}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
       >
         {/* 1. SCREEN HEADER */}
         <View style={styles.header}>
@@ -208,6 +261,21 @@ export default function MedicinesScreen() {
             style={styles.addButton}
           />
         </View>
+
+        {/* API Error Banner */}
+        {apiError && (
+          <View style={styles.apiErrorBanner}>
+            <Ionicons name="alert-circle-outline" size={18} color={Colors.danger} style={{ marginRight: 8 }} />
+            <AppText variant="caption" color={Colors.danger} style={{ flex: 1 }}>
+              {apiError}
+            </AppText>
+            <Pressable onPress={() => loadMedicines()} style={styles.retryChip}>
+              <AppText variant="caption" color={Colors.primary} style={{ fontWeight: '600' }}>
+                Retry
+              </AppText>
+            </Pressable>
+          </View>
+        )}
 
         {/* Temporary Feedback Banner */}
         {feedbackBanner && (
@@ -273,21 +341,39 @@ export default function MedicinesScreen() {
 
         {/* 4. MEDICATION LIST */}
         <View style={styles.listContainer}>
-          {filteredMedicines.length === 0 ? (
+          {isLoading && medicines.length === 0 ? (
+            /* Loading State */
+            <AppCard style={styles.emptyCard}>
+              <ActivityIndicator size="large" color={Colors.primary} style={{ marginBottom: Spacing.sm }} />
+              <AppText variant="body" color={Colors.textSecondary}>
+                Loading your medication routines...
+              </AppText>
+            </AppCard>
+          ) : filteredMedicines.length === 0 ? (
             /* Empty State */
             <AppCard style={styles.emptyCard}>
               <View style={styles.emptyIconCircle}>
                 <Ionicons name="search-outline" size={28} color={Colors.textMuted} />
               </View>
               <AppText variant="h3" style={styles.emptyTitle}>
-                No medicines found
+                {medicines.length === 0 ? 'No medicines yet' : 'No medicines found'}
               </AppText>
               <AppText variant="secondary" color={Colors.textSecondary} style={styles.emptySubtitle}>
-                {searchQuery.trim().length > 0
+                {medicines.length === 0
+                  ? 'Tap "Add" above to record your first prescribed routine.'
+                  : searchQuery.trim().length > 0
                   ? `No results matching "${searchQuery}". Check the spelling or try a different filter.`
                   : `You have no medications categorized as ${activeFilter}.`}
               </AppText>
-              {(searchQuery.trim().length > 0 || activeFilter !== 'All') && (
+              {medicines.length === 0 ? (
+                <AppButton
+                  title="Add Your First Medicine"
+                  variant="primary"
+                  size="sm"
+                  onPress={handleAddMedicine}
+                  style={styles.resetButton}
+                />
+              ) : (searchQuery.trim().length > 0 || activeFilter !== 'All') ? (
                 <AppButton
                   title="Reset Filters"
                   variant="secondary"
@@ -298,7 +384,7 @@ export default function MedicinesScreen() {
                   }}
                   style={styles.resetButton}
                 />
-              )}
+              ) : null}
             </AppCard>
           ) : (
             filteredMedicines.map((item) => {
@@ -741,6 +827,24 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
   },
   // Feedback Banner
+  apiErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.28)',
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  retryChip: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(230, 162, 60, 0.15)',
+    borderRadius: Radius.sm,
+    marginLeft: Spacing.xs,
+  },
   feedbackBanner: {
     flexDirection: 'row',
     alignItems: 'center',

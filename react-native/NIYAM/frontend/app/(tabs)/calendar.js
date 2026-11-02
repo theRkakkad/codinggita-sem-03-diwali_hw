@@ -1,8 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
   ScrollView,
+  Pressable,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,13 +16,13 @@ import { Radius } from '../../constants/radius';
 import { Typography } from '../../constants/typography';
 import AppText from '../../components/ui/AppText';
 import {
-  ADHERENCE_RECORDS,
   calculateMonthStats,
   MONTH_NAMES_FULL,
 } from '../../constants/adherenceData';
 import AdherenceCalendarGrid from '../../components/adherence/AdherenceCalendarGrid';
 import DailyDoseHistoryCard from '../../components/adherence/DailyDoseHistoryCard';
 import MonthlyStatisticsCard from '../../components/adherence/MonthlyStatisticsCard';
+import { doseEventService } from '../../services/doseEventService';
 
 /**
  * Helper to build YYYY-MM-DD date key from Date object
@@ -32,30 +35,81 @@ function toDateKey(date = new Date()) {
 }
 
 /**
- * NIYAM Adherence & History Screen (Phase 12)
+ * NIYAM Adherence & History Screen (Phase 12 & Phase 19 Live Integration)
  * Complete adherence interface with interactive monthly calendar,
- * date-driven dose history, evaluated compliance rates, and monthly statistics.
+ * date-driven dose history, evaluated compliance rates, and monthly statistics connected to MongoDB.
  */
 export default function CalendarScreen() {
   const today = useMemo(() => new Date(), []);
 
   // Calendar month & date selection local state
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
-  const [currentMonth, setCurrentMonth] = useState(today.getMonth()); // 0-indexed (10 = November)
+  const [currentMonth, setCurrentMonth] = useState(today.getMonth()); // 0-indexed
   const [selectedDate, setSelectedDate] = useState(toDateKey(today));
+
+  // Live dose event state
+  const [liveEvents, setLiveEvents] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [apiError, setApiError] = useState(null);
 
   // Current month label for the screen header
   const currentMonthLabel = MONTH_NAMES_FULL[currentMonth] || '';
 
+  // Fetch month dose events from MongoDB
+  const loadMonthEvents = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    setApiError(null);
+
+    try {
+      const monthStr = String(currentMonth + 1).padStart(2, '0');
+      const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate();
+      const startDate = `${currentYear}-${monthStr}-01`;
+      const endDate = `${currentYear}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+
+      const events = await doseEventService.getDoseEvents({ startDate, endDate });
+      setLiveEvents(events);
+    } catch (err) {
+      console.warn('Load calendar dose events error:', err.message);
+      setApiError(err.message || 'Unable to load adherence records from server.');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [currentYear, currentMonth]);
+
+  useEffect(() => {
+    loadMonthEvents();
+  }, [loadMonthEvents]);
+
+  // Group events by YYYY-MM-DD date key
+  const activeRecords = useMemo(() => {
+    const map = {};
+    for (const ev of liveEvents) {
+      if (!ev.scheduledAt) continue;
+      const dateKey = typeof ev.scheduledAt === 'string'
+        ? ev.scheduledAt.split('T')[0]
+        : toDateKey(new Date(ev.scheduledAt));
+
+      if (!map[dateKey]) map[dateKey] = [];
+      map[dateKey].push(ev);
+    }
+    return map;
+  }, [liveEvents]);
+
   // Get daily dose records for currently selected date
   const selectedDayDoses = useMemo(() => {
-    return ADHERENCE_RECORDS[selectedDate] || [];
-  }, [selectedDate]);
+    return activeRecords[selectedDate] || [];
+  }, [activeRecords, selectedDate]);
 
   // Compute monthly statistics dynamically for currently viewed month
   const monthStats = useMemo(() => {
-    return calculateMonthStats(currentYear, currentMonth, ADHERENCE_RECORDS);
-  }, [currentYear, currentMonth]);
+    return calculateMonthStats(currentYear, currentMonth, activeRecords);
+  }, [currentYear, currentMonth, activeRecords]);
 
   // Month Navigation Handlers
   const handlePrevMonth = () => {
@@ -107,6 +161,14 @@ export default function CalendarScreen() {
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => loadMonthEvents(true)}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
       >
         {/* 1. SCREEN HEADER (Phase 12 Requirement A) */}
         <View style={styles.header}>
@@ -136,6 +198,21 @@ export default function CalendarScreen() {
           </View>
         </View>
 
+        {/* API Error Feedback Banner */}
+        {apiError && (
+          <View style={styles.apiErrorBanner}>
+            <Ionicons name="alert-circle-outline" size={18} color={Colors.danger} style={{ marginRight: 8 }} />
+            <AppText variant="caption" color={Colors.danger} style={{ flex: 1 }}>
+              {apiError}
+            </AppText>
+            <Pressable onPress={() => loadMonthEvents()} style={styles.retryChip}>
+              <AppText variant="caption" color={Colors.primary} style={{ fontWeight: '600' }}>
+                Retry
+              </AppText>
+            </Pressable>
+          </View>
+        )}
+
         {/* 2. MONTHLY CALENDAR (Phase 12 Requirement B) */}
         <AdherenceCalendarGrid
           currentYear={currentYear}
@@ -145,7 +222,7 @@ export default function CalendarScreen() {
           onPrevMonth={handlePrevMonth}
           onNextMonth={handleNextMonth}
           onTodayPress={handleJumpToToday}
-          records={ADHERENCE_RECORDS}
+          records={activeRecords}
         />
 
         {/* 3. SELECTED DAY SUMMARY & DAILY DOSE HISTORY (Phase 12 Requirement C & D) */}
@@ -208,5 +285,24 @@ const styles = StyleSheet.create({
   headerMonthText: {
     fontWeight: '700',
     fontSize: 11,
+  },
+  // Error Feedback Banner
+  apiErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.28)',
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  retryChip: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(230, 162, 60, 0.15)',
+    borderRadius: Radius.sm,
+    marginLeft: Spacing.xs,
   },
 });

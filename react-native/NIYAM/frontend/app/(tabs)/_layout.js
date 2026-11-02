@@ -1,17 +1,27 @@
 import React from 'react';
 import { StyleSheet, Platform } from 'react-native';
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors } from '../../constants/colors';
 import { Typography } from '../../constants/typography';
+import { useAuth } from '../../context/AuthContext';
 
 // Bottom Tab Navigation Layout for the main NIYAM application.
 // Apple-themed floating glass tab bar with safe-area spacing to avoid system gesture collision.
 export default function TabLayout() {
+  const { isAuthenticated, isLoading } = useAuth();
   const insets = useSafeAreaInsets();
   const bottomInset = insets.bottom > 0 ? insets.bottom + 8 : (Platform.OS === 'ios' ? 16 : 20);
+
+  if (isLoading) {
+    return null;
+  }
+
+  if (!isAuthenticated) {
+    return <Redirect href="/(auth)/login" />;
+  }
 
   return (
     <Tabs

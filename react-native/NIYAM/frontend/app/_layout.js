@@ -1,12 +1,13 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Colors } from '../constants/colors';
+import { AuthProvider } from '../context/AuthContext';
 
 // Root navigation stack for NIYAM.
-// Organizes the app into authentication (auth) and main tab navigation (tabs).
+// Organizes the app into authentication (auth) and main tab navigation (tabs), wrapped with AuthProvider.
 export default function RootLayout() {
   return (
-    <>
+    <AuthProvider>
       <StatusBar style="light" />
       <Stack
         screenOptions={{
@@ -19,6 +20,6 @@ export default function RootLayout() {
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       </Stack>
-    </>
+    </AuthProvider>
   );
 }

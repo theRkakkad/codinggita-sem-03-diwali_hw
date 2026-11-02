@@ -22,16 +22,19 @@ import AppText from '../../components/ui/AppText';
 import AppButton from '../../components/ui/AppButton';
 import AppCard from '../../components/ui/AppCard';
 import AppInput from '../../components/ui/AppInput';
+import { useAuth } from '../../context/AuthContext';
 
 // Premium Login Screen with Fluid Animations and Vector Icons.
 export default function LoginScreen() {
   const router = useRouter();
+  const { login } = useAuth();
 
   // Form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+  const [apiError, setApiError] = useState(null);
 
   // Entrance animations
   const headerFadeAnim = useRef(new Animated.Value(0)).current;
@@ -97,19 +100,21 @@ export default function LoginScreen() {
   const isValidEmail = /^\S+@\S+\.\S+$/.test(email.trim());
   const canSubmit = isFormFilled && isValidEmail && !isLoading;
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!validateForm()) return;
 
+    setApiError(null);
     setIsLoading(true);
-    // Temporary demo message as required by Phase 07
-    setTimeout(() => {
+
+    try {
+      await login(email.trim(), password);
+      // Navigate to dashboard after successful login
+      router.replace('/(tabs)');
+    } catch (err) {
+      setApiError(err.message || 'Login failed. Please check your credentials.');
+    } finally {
       setIsLoading(false);
-      Alert.alert(
-        'Validation Successful',
-        'Welcome back! Frontend credentials validation passed. Backend authentication will be connected in a future phase.',
-        [{ text: 'OK' }]
-      );
-    }, 500);
+    }
   };
 
   // Demo auto-fill helper for seamless college evaluation
@@ -195,6 +200,16 @@ export default function LoginScreen() {
             }}
           >
             <AppCard style={styles.formCard}>
+              {/* API Error Feedback Banner */}
+              {apiError && (
+                <View style={styles.errorBanner}>
+                  <Ionicons name="alert-circle-outline" size={18} color={Colors.danger} style={styles.errorIcon} />
+                  <AppText variant="caption" color={Colors.danger} style={styles.errorBannerText}>
+                    {apiError}
+                  </AppText>
+                </View>
+              )}
+
               {/* Email Input */}
               <AppInput
                 label="Email"
@@ -203,6 +218,7 @@ export default function LoginScreen() {
                 onChangeText={(text) => {
                   setEmail(text);
                   if (errors.email) setErrors((prev) => ({ ...prev, email: null }));
+                  if (apiError) setApiError(null);
                 }}
                 leftIcon="mail"
                 keyboardType="email-address"
@@ -351,6 +367,24 @@ const styles = StyleSheet.create({
   formCard: {
     padding: Spacing.cardPaddingLarge,
     marginBottom: Spacing.lg,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.28)',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    marginBottom: Spacing.md,
+  },
+  errorIcon: {
+    marginRight: Spacing.xs,
+  },
+  errorBannerText: {
+    flex: 1,
+    lineHeight: 18,
   },
   forgotRow: {
     alignItems: 'flex-end',
