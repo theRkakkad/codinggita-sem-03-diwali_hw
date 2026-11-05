@@ -8,9 +8,10 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { Colors } from '../../constants/colors';
@@ -22,7 +23,8 @@ import AppButton from '../../components/ui/AppButton';
 import AppCard from '../../components/ui/AppCard';
 import { getDynamicDateString } from '../../constants/dashboardData';
 import { useAuth } from '../../context/AuthContext';
-import { doseEventService } from '../../services/doseEventService';
+import { doseEventService, formatTime } from '../../services/doseEventService';
+import { notificationService, SNOOZE_OPTIONS } from '../../services/notificationService';
 
 function getTodayDateKey() {
   const now = new Date();
@@ -32,11 +34,12 @@ function getTodayDateKey() {
   return `${y}-${m}-${d}`;
 }
 
-// NIYAM Premium Dashboard Screen (Phase 08 & Phase 19 Live Integration)
-// Displays daily adherence metrics, next scheduled dose, schedule list, and quick actions connected to MongoDB.
+// NIYAM Premium Dashboard Screen (Phase 08, 19 & Phase 22 Taken/Snooze/Skip Integration)
+// Displays daily adherence metrics, next scheduled dose, schedule list, and interactive dose response actions.
 export default function DashboardScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { activeDoseId, skipDoseId } = useLocalSearchParams();
 
   // Local state for doses and dynamic interactions
   const [doses, setDoses] = useState([]);
@@ -45,6 +48,13 @@ export default function DashboardScreen() {
   const [apiError, setApiError] = useState(null);
   const [feedbackMessage, setFeedbackMessage] = useState(null);
   const [selectedDose, setSelectedDose] = useState(null);
+
+  // Phase 22: Processing, Snooze, and Skip dialog states
+  const [processingActionDoseId, setProcessingActionDoseId] = useState(null);
+  const [isSnoozing, setIsSnoozing] = useState(false);
+  const [snoozeModalDose, setSnoozeModalDose] = useState(null);
+  const [skipModalDose, setSkipModalDose] = useState(null);
+  const [skipReasonInput, setSkipReasonInput] = useState('');
 
   // Dynamic current date
   const currentDateString = getDynamicDateString();
@@ -79,31 +89,58 @@ export default function DashboardScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    loadDoses();
-  }, [loadDoses]);
+  useFocusEffect(
+    useCallback(() => {
+      loadDoses();
+    }, [loadDoses])
+  );
 
   // Calculate adherence and metrics dynamically adhering strictly to product formula
   const totalDoses = doses.length;
   const takenCount = doses.filter((d) => d.status === 'taken').length;
   const pendingCount = doses.filter((d) => d.status === 'pending').length;
-  const missedCount = doses.filter((d) => d.status === 'missed').length;
   const skippedCount = doses.filter((d) => d.status === 'skipped').length;
+  const missedCount = doses.filter((d) => d.status === 'missed').length;
+  const unconfirmedCount = doses.filter((d) => d.status === 'unconfirmed').length;
   const adherencePercentage =
     totalDoses > 0 ? Math.round((takenCount / totalDoses) * 100) : 0;
 
-  // Find the primary next dose (first pending dose, or first dose)
+  // Handle incoming notification navigation parameters (activeDoseId or skipDoseId)
+  useEffect(() => {
+    if (doses.length === 0) return;
+    if (activeDoseId) {
+      const match = doses.find((d) => d.id === activeDoseId || d._id === activeDoseId);
+      if (match) setSelectedDose(match);
+    } else if (skipDoseId) {
+      const match = doses.find((d) => d.id === skipDoseId || d._id === skipDoseId);
+      if (match) {
+        setSkipReasonInput('');
+        setSkipModalDose(match);
+      }
+    }
+  }, [activeDoseId, skipDoseId, doses]);
+
+  // Find primary next dose (first pending dose, or first dose)
   const nextDose = doses.find((d) => d.status === 'pending') || doses[0] || null;
   const isNextDoseTaken = nextDose ? nextDose.status === 'taken' : false;
+  const isNextDoseSkipped = nextDose ? nextDose.status === 'skipped' : false;
 
   // Functional Mark as Taken handler connected to backend
   const handleMarkAsTaken = async (doseId) => {
+    if (processingActionDoseId) return; // Prevent concurrent submissions
     const target = doses.find((d) => d.id === doseId || d._id === doseId);
     if (!target || target.status === 'taken') return;
     const id = target.id || target._id;
 
+    setProcessingActionDoseId(id);
     try {
       const updated = await doseEventService.markDoseAsTaken(id);
+
+      // Cancel any active snooze reminder for this dose
+      try {
+        await notificationService.cancelSnoozeReminder(id);
+      } catch (e) {}
+
       setDoses((prev) =>
         prev.map((item) => ((item.id === id || item._id === id) ? updated : item))
       );
@@ -116,38 +153,89 @@ export default function DashboardScreen() {
       }
     } catch (err) {
       Alert.alert('Action Failed', err.message || 'Unable to mark dose as taken.');
+    } finally {
+      setProcessingActionDoseId(null);
     }
   };
 
+  // Open Snooze selection modal
+  const handleOpenSnoozeModal = (dose) => {
+    if (!dose) return;
+    setSelectedDose(null);
+    setSnoozeModalDose(dose);
+  };
+
+  // Schedule Snooze reminder
+  const handleSnoozeDose = async (dose, minutes) => {
+    if (!dose) return;
+    try {
+      setIsSnoozing(true);
+      const result = await notificationService.scheduleSnoozeReminder(dose, minutes);
+      setFeedbackMessage(`Snoozed ${dose.name} for ${minutes} minutes. Reminder set for ${formatTime(result.triggerTime)}.`);
+      setTimeout(() => setFeedbackMessage(null), 4000);
+      setSnoozeModalDose(null);
+      if (selectedDose && (selectedDose.id === dose.id || selectedDose._id === dose.id)) {
+        setSelectedDose(null);
+      }
+    } catch (err) {
+      Alert.alert('Snooze Failed', err.message || 'Could not schedule snooze reminder.');
+    } finally {
+      setIsSnoozing(false);
+    }
+  };
+
+  // Open Skip confirmation modal
+  const handleOpenSkipModal = (dose) => {
+    if (!dose) return;
+    setSelectedDose(null);
+    setSkipReasonInput('');
+    setSkipModalDose(dose);
+  };
+
   // Functional Mark as Skipped handler connected to backend
-  const handleMarkAsSkipped = async (doseId, reason = 'Skipped by user') => {
+  const handleConfirmSkip = async (doseId, reason = null) => {
+    if (processingActionDoseId) return;
     const target = doses.find((d) => d.id === doseId || d._id === doseId);
     if (!target) return;
     const id = target.id || target._id;
 
+    setProcessingActionDoseId(id);
     try {
-      const updated = await doseEventService.markDoseAsSkipped(id, reason);
+      const trimmedReason = reason && reason.trim() ? reason.trim() : 'Skipped by user';
+      const updated = await doseEventService.markDoseAsSkipped(id, trimmedReason);
+
+      // Cancel any active snooze reminder for this dose
+      try {
+        await notificationService.cancelSnoozeReminder(id);
+      } catch (e) {}
+
       setDoses((prev) =>
         prev.map((item) => ((item.id === id || item._id === id) ? updated : item))
       );
 
-      setFeedbackMessage(`Skipped ${target.name}.`);
+      setFeedbackMessage(`Marked ${target.name} as skipped.`);
       setTimeout(() => setFeedbackMessage(null), 3500);
 
+      setSkipModalDose(null);
+      setSkipReasonInput('');
       if (selectedDose && (selectedDose.id === id || selectedDose._id === id)) {
         setSelectedDose(updated);
       }
     } catch (err) {
       Alert.alert('Action Failed', err.message || 'Unable to skip dose.');
+    } finally {
+      setProcessingActionDoseId(null);
     }
   };
 
   // Functional Explicitly Confirm as Missed handler connected to backend
   const handleConfirmMissed = async (doseId, missedReason = 'User confirmed missed dose') => {
+    if (processingActionDoseId) return;
     const target = doses.find((d) => d.id === doseId || d._id === doseId);
     if (!target) return;
     const id = target.id || target._id;
 
+    setProcessingActionDoseId(id);
     try {
       const updated = await doseEventService.confirmDoseAsMissed(id, missedReason);
       setDoses((prev) =>
@@ -162,6 +250,8 @@ export default function DashboardScreen() {
       }
     } catch (err) {
       Alert.alert('Action Failed', err.message || 'Unable to confirm missed dose.');
+    } finally {
+      setProcessingActionDoseId(null);
     }
   };
 
@@ -303,7 +393,20 @@ export default function DashboardScreen() {
 
             <View style={styles.metricDivider} />
 
-            {/* Missed Stat (Explicit demo data, kept distinct from unconfirmed) */}
+            {/* Skipped Stat */}
+            <View style={styles.metricItem}>
+              <View style={styles.metricHeaderRow}>
+                <View style={[styles.statusDot, { backgroundColor: Colors.primary }]} />
+                <AppText variant="caption" color={Colors.textMuted}>Skipped</AppText>
+              </View>
+              <AppText variant="h3" color={Colors.primary} style={styles.metricCount}>
+                {skippedCount}
+              </AppText>
+            </View>
+
+            <View style={styles.metricDivider} />
+
+            {/* Missed Stat */}
             <View style={styles.metricItem}>
               <View style={styles.metricHeaderRow}>
                 <View style={[styles.statusDot, { backgroundColor: Colors.danger }]} />
@@ -355,11 +458,15 @@ export default function DashboardScreen() {
             <View style={styles.nextDoseSupporting}>
               <Ionicons name="information-circle-outline" size={14} color={Colors.textMuted} />
               <AppText variant="caption" color={Colors.textMuted} style={styles.supportNoteText}>
-                {isNextDoseTaken ? 'Logged in adherence record' : 'Your next scheduled dose'}
+                {isNextDoseTaken
+                  ? 'Logged in adherence record'
+                  : isNextDoseSkipped
+                  ? 'Marked as skipped in adherence record'
+                  : 'Your next scheduled dose'}
               </AppText>
             </View>
 
-            {/* Action Button: Mark as Taken or Completed State */}
+            {/* Action Buttons: Taken, Snooze, Skip */}
             <View style={styles.nextDoseActionRow}>
               {isNextDoseTaken ? (
                 <View style={styles.completedBadge}>
@@ -368,15 +475,44 @@ export default function DashboardScreen() {
                     Dose completed for today
                   </AppText>
                 </View>
+              ) : isNextDoseSkipped ? (
+                <View style={[styles.completedBadge, { borderColor: 'rgba(230, 162, 60, 0.4)' }]}>
+                  <Ionicons name="play-skip-forward-circle" size={18} color={Colors.primary} style={styles.completedIcon} />
+                  <AppText variant="secondary" color={Colors.primary} style={styles.completedText}>
+                    Dose skipped for today
+                  </AppText>
+                </View>
               ) : (
-                <AppButton
-                  title="Mark as taken"
-                  variant="primary"
-                  size="md"
-                  icon={<Ionicons name="checkmark" size={18} color="#171A19" />}
-                  onPress={() => handleMarkAsTaken(nextDose.id)}
-                  style={styles.markTakenButton}
-                />
+                <View style={styles.nextDoseActionCol}>
+                  <AppButton
+                    title={processingActionDoseId === nextDose.id ? "Recording..." : "Mark as taken"}
+                    variant="primary"
+                    size="md"
+                    loading={processingActionDoseId === nextDose.id}
+                    disabled={processingActionDoseId === nextDose.id}
+                    icon={<Ionicons name="checkmark" size={18} color="#171A19" />}
+                    onPress={() => handleMarkAsTaken(nextDose.id)}
+                    style={styles.markTakenButton}
+                  />
+                  <View style={styles.nextDoseSubActionsRow}>
+                    <AppButton
+                      title="Snooze"
+                      variant="secondary"
+                      size="sm"
+                      icon={<Ionicons name="time-outline" size={14} color={Colors.textPrimary} />}
+                      onPress={() => handleOpenSnoozeModal(nextDose)}
+                      style={{ flex: 1, marginRight: Spacing.xs }}
+                    />
+                    <AppButton
+                      title="Skip"
+                      variant="outline"
+                      size="sm"
+                      icon={<Ionicons name="play-skip-forward" size={14} color={Colors.danger} />}
+                      onPress={() => handleOpenSkipModal(nextDose)}
+                      style={{ flex: 1, borderColor: 'rgba(239, 68, 68, 0.35)' }}
+                    />
+                  </View>
+                </View>
               )}
             </View>
           </AppCard>
@@ -493,6 +629,60 @@ export default function DashboardScreen() {
                     <AppText variant="caption" color={Colors.textSecondary}>
                       {dose.dosage} • {dose.time}
                     </AppText>
+
+                    {/* Quick inline action chips for pending doses (Phase 22) */}
+                    {isPending && (
+                      <View style={styles.inlineActionRow}>
+                        <Pressable
+                          onPress={(e) => {
+                            e.stopPropagation?.();
+                            handleMarkAsTaken(dose.id);
+                          }}
+                          disabled={processingActionDoseId === dose.id}
+                          style={styles.quickActionTake}
+                          accessibilityLabel={`Mark ${dose.name} taken`}
+                        >
+                          {processingActionDoseId === dose.id ? (
+                            <ActivityIndicator size="small" color="#171A19" />
+                          ) : (
+                            <>
+                              <Ionicons name="checkmark" size={13} color="#171A19" style={{ marginRight: 3 }} />
+                              <AppText variant="caption" color="#171A19" style={{ fontWeight: '700' }}>
+                                Take
+                              </AppText>
+                            </>
+                          )}
+                        </Pressable>
+
+                        <Pressable
+                          onPress={(e) => {
+                            e.stopPropagation?.();
+                            handleOpenSnoozeModal(dose);
+                          }}
+                          style={styles.quickActionSnooze}
+                          accessibilityLabel={`Snooze ${dose.name}`}
+                        >
+                          <Ionicons name="time-outline" size={13} color={Colors.primary} style={{ marginRight: 3 }} />
+                          <AppText variant="caption" color={Colors.primary} style={{ fontWeight: '600' }}>
+                            Snooze
+                          </AppText>
+                        </Pressable>
+
+                        <Pressable
+                          onPress={(e) => {
+                            e.stopPropagation?.();
+                            handleOpenSkipModal(dose);
+                          }}
+                          style={styles.quickActionSkip}
+                          accessibilityLabel={`Skip ${dose.name}`}
+                        >
+                          <Ionicons name="play-skip-forward" size={12} color={Colors.textSecondary} style={{ marginRight: 2 }} />
+                          <AppText variant="caption" color={Colors.textSecondary} style={{ fontWeight: '500' }}>
+                            Skip
+                          </AppText>
+                        </Pressable>
+                      </View>
+                    )}
                   </View>
 
                   {/* Status Pill Tag */}
@@ -679,52 +869,55 @@ export default function DashboardScreen() {
                   {selectedDose.status === 'pending' || selectedDose.status === 'unconfirmed' ? (
                     <>
                       <AppButton
-                        title="Mark as Taken"
+                        title={processingActionDoseId === selectedDose.id ? "Recording..." : "Mark as Taken"}
                         variant="primary"
                         size="md"
+                        loading={processingActionDoseId === selectedDose.id}
+                        disabled={processingActionDoseId === selectedDose.id}
                         icon={<Ionicons name="checkmark" size={18} color="#171A19" />}
-                        onPress={() => {
-                          handleMarkAsTaken(selectedDose.id);
-                          setSelectedDose(null);
-                        }}
+                        onPress={() => handleMarkAsTaken(selectedDose.id)}
                         style={styles.modalActionButton}
                       />
                       <View style={styles.modalSubActionsRow}>
                         <AppButton
-                          title="Skip Dose"
+                          title="Snooze"
                           variant="secondary"
                           size="sm"
-                          icon={<Ionicons name="play-skip-forward" size={14} color={Colors.textPrimary} />}
-                          onPress={() => {
-                            handleMarkAsSkipped(selectedDose.id);
-                            setSelectedDose(null);
-                          }}
-                          style={{ flex: 1 }}
+                          icon={<Ionicons name="time-outline" size={14} color={Colors.textPrimary} />}
+                          onPress={() => handleOpenSnoozeModal(selectedDose)}
+                          style={{ flex: 1, marginRight: Spacing.xs }}
                         />
                         <AppButton
-                          title="Confirm Missed"
+                          title="Skip Dose"
                           variant="outline"
                           size="sm"
-                          icon={<Ionicons name="close" size={14} color={Colors.danger} />}
-                          onPress={() => {
-                            handleConfirmMissed(selectedDose.id);
-                            setSelectedDose(null);
-                          }}
-                          style={{ flex: 1, borderColor: 'rgba(216, 121, 112, 0.4)' }}
+                          icon={<Ionicons name="play-skip-forward" size={14} color={Colors.danger} />}
+                          onPress={() => handleOpenSkipModal(selectedDose)}
+                          style={{ flex: 1, borderColor: 'rgba(239, 68, 68, 0.4)' }}
                         />
                       </View>
+                      <AppButton
+                        title="Confirm as Missed"
+                        variant="outline"
+                        size="sm"
+                        icon={<Ionicons name="close" size={14} color={Colors.textMuted} />}
+                        onPress={() => {
+                          handleConfirmMissed(selectedDose.id);
+                          setSelectedDose(null);
+                        }}
+                        style={{ marginTop: Spacing.xs, borderColor: 'rgba(255, 255, 255, 0.12)' }}
+                      />
                     </>
                   ) : selectedDose.status === 'skipped' ? (
                     <>
                       <AppButton
-                        title="Change to Taken"
+                        title={processingActionDoseId === selectedDose.id ? "Recording..." : "Change to Taken"}
                         variant="primary"
                         size="md"
+                        loading={processingActionDoseId === selectedDose.id}
+                        disabled={processingActionDoseId === selectedDose.id}
                         icon={<Ionicons name="checkmark" size={18} color="#171A19" />}
-                        onPress={() => {
-                          handleMarkAsTaken(selectedDose.id);
-                          setSelectedDose(null);
-                        }}
+                        onPress={() => handleMarkAsTaken(selectedDose.id)}
                         style={styles.modalActionButton}
                       />
                       <AppButton
@@ -744,6 +937,190 @@ export default function DashboardScreen() {
                       style={styles.modalActionButton}
                     />
                   )}
+                </View>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* SNOOZE SELECTION MODAL (Phase 22) */}
+      <Modal
+        visible={!!snoozeModalDose}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSnoozeModalDose(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setSnoozeModalDose(null)}>
+          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+            {snoozeModalDose && (
+              <>
+                <View style={styles.modalHeader}>
+                  <View style={styles.modalTitleBlock}>
+                    <AppText variant="label" color={Colors.primary}>
+                      SNOOZE REMINDER
+                    </AppText>
+                    <AppText variant="h2" style={styles.modalMedName}>
+                      {snoozeModalDose.name}
+                    </AppText>
+                  </View>
+                  <Pressable
+                    onPress={() => setSnoozeModalDose(null)}
+                    hitSlop={12}
+                    style={styles.modalCloseButton}
+                  >
+                    <Ionicons name="close" size={20} color={Colors.textMuted} />
+                  </Pressable>
+                </View>
+
+                <AppText variant="secondary" color={Colors.textSecondary} style={{ marginBottom: Spacing.md }}>
+                  Choose how long to snooze this dose. NIYAM will send you a reminder alert when the interval arrives.
+                </AppText>
+
+                {/* Snooze interval options */}
+                <View style={styles.snoozeOptionsGrid}>
+                  {SNOOZE_OPTIONS.map((mins) => (
+                    <Pressable
+                      key={mins}
+                      onPress={() => handleSnoozeDose(snoozeModalDose, mins)}
+                      disabled={isSnoozing}
+                      style={({ pressed }) => [
+                        styles.snoozeOptionCard,
+                        pressed && styles.snoozeOptionPressed,
+                      ]}
+                      accessibilityLabel={`Snooze for ${mins} minutes`}
+                    >
+                      <Ionicons name="time-outline" size={22} color={Colors.primary} />
+                      <AppText variant="h3" color={Colors.textPrimary} style={{ marginTop: 4 }}>
+                        {mins} min
+                      </AppText>
+                      <AppText variant="caption" color={Colors.textMuted}>
+                        Reminder
+                      </AppText>
+                    </Pressable>
+                  ))}
+                </View>
+
+                {/* Clarification banner */}
+                <View style={styles.infoBannerSnooze}>
+                  <Ionicons name="information-circle-outline" size={14} color={Colors.textMuted} style={{ marginRight: 6, marginTop: 1 }} />
+                  <AppText variant="caption" color={Colors.textMuted} style={{ flex: 1, lineHeight: 16 }}>
+                    Snoozing only sets a temporary on-device reminder. It does not alter your scheduled dose time or clinical routine in MongoDB.
+                  </AppText>
+                </View>
+
+                <AppButton
+                  title="Cancel"
+                  variant="outline"
+                  size="sm"
+                  onPress={() => setSnoozeModalDose(null)}
+                  style={{ marginTop: Spacing.xs }}
+                />
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* SKIP CONFIRMATION MODAL (Phase 22) */}
+      <Modal
+        visible={!!skipModalDose}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSkipModalDose(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setSkipModalDose(null)}>
+          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+            {skipModalDose && (
+              <>
+                <View style={styles.modalHeader}>
+                  <View style={styles.modalTitleBlock}>
+                    <AppText variant="label" color={Colors.danger}>
+                      CONFIRM SKIP
+                    </AppText>
+                    <AppText variant="h2" style={styles.modalMedName}>
+                      Skip {skipModalDose.name}?
+                    </AppText>
+                  </View>
+                  <Pressable
+                    onPress={() => setSkipModalDose(null)}
+                    hitSlop={12}
+                    style={styles.modalCloseButton}
+                  >
+                    <Ionicons name="close" size={20} color={Colors.textMuted} />
+                  </Pressable>
+                </View>
+
+                <AppText variant="secondary" color={Colors.textSecondary} style={{ marginBottom: Spacing.sm }}>
+                  Are you sure you want to skip your scheduled {skipModalDose.dosage} dose at {skipModalDose.time}?
+                </AppText>
+
+                {/* Quick reason tag chips */}
+                <AppText variant="caption" color={Colors.textMuted} style={{ marginBottom: 6 }}>
+                  Reason (Optional):
+                </AppText>
+                <View style={styles.quickReasonChipsRow}>
+                  {['Doctor advised', 'Feeling sick', 'Ran out of medicine', 'Fasting'].map((chip) => (
+                    <Pressable
+                      key={chip}
+                      onPress={() => setSkipReasonInput(chip)}
+                      style={[
+                        styles.reasonChip,
+                        skipReasonInput === chip && styles.reasonChipActive,
+                      ]}
+                      accessibilityLabel={`Reason: ${chip}`}
+                    >
+                      <AppText
+                        variant="caption"
+                        color={skipReasonInput === chip ? Colors.primary : Colors.textSecondary}
+                        style={{ fontWeight: skipReasonInput === chip ? '700' : '400' }}
+                      >
+                        {chip}
+                      </AppText>
+                    </Pressable>
+                  ))}
+                </View>
+
+                {/* Custom Reason Input */}
+                <TextInput
+                  value={skipReasonInput}
+                  onChangeText={setSkipReasonInput}
+                  placeholder="Add custom reason or note..."
+                  placeholderTextColor={Colors.textMuted}
+                  style={styles.skipReasonInput}
+                  maxLength={100}
+                />
+
+                {/* Clarification banner */}
+                <View style={styles.infoBannerSnooze}>
+                  <Ionicons name="information-circle-outline" size={14} color={Colors.textMuted} style={{ marginRight: 6, marginTop: 1 }} />
+                  <AppText variant="caption" color={Colors.textMuted} style={{ flex: 1, lineHeight: 16 }}>
+                    Skipped doses are recorded in your adherence history as intentionally skipped, distinct from missed doses.
+                  </AppText>
+                </View>
+
+                <View style={styles.modalSubActionsRow}>
+                  <AppButton
+                    title="Keep Dose"
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => {
+                      setSkipModalDose(null);
+                      setSkipReasonInput('');
+                    }}
+                    disabled={processingActionDoseId === skipModalDose.id}
+                    style={{ flex: 1, marginRight: Spacing.xs }}
+                  />
+                  <AppButton
+                    title={processingActionDoseId === skipModalDose.id ? "Skipping..." : "Confirm Skip"}
+                    variant="outline"
+                    size="sm"
+                    loading={processingActionDoseId === skipModalDose.id}
+                    disabled={processingActionDoseId === skipModalDose.id}
+                    icon={<Ionicons name="play-skip-forward" size={14} color={Colors.danger} />}
+                    onPress={() => handleConfirmSkip(skipModalDose.id, skipReasonInput)}
+                    style={{ flex: 1, borderColor: 'rgba(239, 68, 68, 0.45)' }}
+                  />
                 </View>
               </>
             )}
@@ -1254,5 +1631,109 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.sm,
     marginTop: Spacing.sm,
+  },
+  // Phase 22 styles: Next Dose Action Columns & Quick Inline Actions
+  nextDoseActionCol: {
+    width: '100%',
+  },
+  nextDoseSubActionsRow: {
+    flexDirection: 'row',
+    marginTop: Spacing.xs,
+  },
+  inlineActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginTop: Spacing.xs,
+  },
+  quickActionTake: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 3,
+    borderRadius: Radius.xs,
+  },
+  quickActionSnooze: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(230, 162, 60, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(230, 162, 60, 0.3)',
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 2,
+    borderRadius: Radius.xs,
+  },
+  quickActionSkip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 2,
+    borderRadius: Radius.xs,
+  },
+  // Snooze Modal Styles
+  snoozeOptionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  snoozeOptionCard: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  snoozeOptionPressed: {
+    backgroundColor: 'rgba(230, 162, 60, 0.15)',
+    borderColor: Colors.primary,
+  },
+  infoBannerSnooze: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: Radius.sm,
+    padding: Spacing.xs,
+    marginBottom: Spacing.sm,
+  },
+  // Skip Modal Styles
+  quickReasonChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: Spacing.sm,
+  },
+  reasonChip: {
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+  },
+  reasonChipActive: {
+    borderColor: Colors.primary,
+    backgroundColor: 'rgba(230, 162, 60, 0.15)',
+  },
+  skipReasonInput: {
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.sm,
+    color: Colors.textPrimary,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    fontSize: Typography.size.body,
+    marginBottom: Spacing.sm,
   },
 });

@@ -33,7 +33,7 @@ export const normalizeDoseEvent = (event) => {
   const timeFormatted = formatTime(event.scheduledAt);
   const actualTimeFormatted = event.takenAt ? formatTime(event.takenAt) : undefined;
 
-  const type = med.type || 'Tablet';
+  const type = med.type || event.type || 'Tablet';
   const category =
     type === 'Capsule' || type === 'Tablet' ? 'Prescription' : type || 'Medication';
 
@@ -41,12 +41,12 @@ export const normalizeDoseEvent = (event) => {
     ...event,
     id,
     _id: id,
-    medicineId: med._id || event.medicineId,
-    name: med.name || 'Medication',
-    dosage: med.dosage || '',
+    medicineId: med._id || (typeof event.medicineId === 'string' ? event.medicineId : event.medicineId),
+    name: med.name || event.name || 'Medication',
+    dosage: med.dosage || event.dosage || '',
     type,
-    instructions: med.instructions || '',
-    frequency: med.frequency || '',
+    instructions: med.instructions || event.instructions || '',
+    frequency: med.frequency || event.frequency || '',
     status,
     scheduledAt: event.scheduledAt,
     scheduledTime: timeFormatted,

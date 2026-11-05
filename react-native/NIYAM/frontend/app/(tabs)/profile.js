@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, StyleSheet, ScrollView, Alert, ActivityIndicator, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Colors } from '../../constants/colors';
@@ -12,6 +12,8 @@ import AppText from '../../components/ui/AppText';
 import AppCard from '../../components/ui/AppCard';
 import AppButton from '../../components/ui/AppButton';
 import { useAuth } from '../../context/AuthContext';
+import { notificationService } from '../../services/notificationService';
+import { medicineService } from '../../services/medicineService';
 
 // Profile & Account Screen connected to authenticated User session
 export default function ProfileScreen() {
@@ -19,6 +21,94 @@ export default function ProfileScreen() {
   const { user, logout, refreshProfile } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Medication reminder preferences & system permissions (Phase 21)
+  const [remindersEnabled, setRemindersEnabled] = useState(true);
+  const [permissionStatus, setPermissionStatus] = useState('undetermined');
+  const [permissionGranted, setPermissionGranted] = useState(false);
+  const [isTestingReminder, setIsTestingReminder] = useState(false);
+
+  // Sync reminder preferences and system permission status
+  const loadReminderSettings = useCallback(async () => {
+    try {
+      const enabled = await notificationService.areRemindersEnabled();
+      setRemindersEnabled(enabled);
+
+      const perm = await notificationService.getPermissionStatus();
+      setPermissionStatus(perm.status);
+      setPermissionGranted(perm.granted);
+    } catch (e) {
+      console.warn('Error loading reminder settings:', e);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadReminderSettings();
+    }, [loadReminderSettings])
+  );
+
+  const handleToggleReminders = async (value) => {
+    try {
+      if (value) {
+        // Request permission if not granted
+        const perm = await notificationService.getPermissionStatus();
+        if (!perm.granted) {
+          if (perm.status === 'denied') {
+            Alert.alert(
+              'Notifications Disabled',
+              'Medication reminders are blocked by your device settings. Would you like to open settings to enable them?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => notificationService.openSettings() },
+              ]
+            );
+            return;
+          }
+
+          const requested = await notificationService.requestPermission();
+          if (!requested) {
+            Alert.alert(
+              'Permission Required',
+              'Notifications are required to alert you when it is time to take your medication.'
+            );
+            return;
+          }
+        }
+
+        // Fetch medicines to schedule active routines
+        const meds = await medicineService.getMedicines().catch(() => []);
+        await notificationService.setRemindersEnabled(true, meds);
+        setRemindersEnabled(true);
+        setPermissionGranted(true);
+      } else {
+        await notificationService.setRemindersEnabled(false);
+        setRemindersEnabled(false);
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Failed to update reminder settings.');
+    }
+  };
+
+  const handleOpenSettings = async () => {
+    await notificationService.openSettings();
+  };
+
+  const handleSendTestReminder = async () => {
+    setIsTestingReminder(true);
+    try {
+      await notificationService.scheduleTestNotification(5);
+      Alert.alert(
+        'Test Reminder Scheduled',
+        'A test reminder will appear in 5 seconds. Lock your screen or switch apps to see the notification banner.',
+        [{ text: 'OK' }]
+      );
+    } catch (err) {
+      Alert.alert('Test Failed', err.message || 'Could not schedule test notification.');
+    } finally {
+      setIsTestingReminder(false);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -143,6 +233,109 @@ export default function ProfileScreen() {
               <AppText variant="body" color={Colors.textPrimary}>{memberSince}</AppText>
             </View>
           </View>
+        </AppCard>
+
+        {/* Medication Reminders Settings Card (Phase 21) */}
+        <AppCard style={styles.card}>
+          <View style={styles.reminderHeaderRow}>
+            <View style={{ flex: 1, paddingRight: Spacing.sm }}>
+              <AppText variant="h3" style={styles.cardTitle}>
+                Medication Reminders
+              </AppText>
+              <AppText variant="secondary" color={Colors.textSecondary} style={styles.reminderSubtitle}>
+                Timely on-device alerts for your prescribed doses.
+              </AppText>
+            </View>
+            <Switch
+              value={remindersEnabled}
+              onValueChange={handleToggleReminders}
+              trackColor={{ false: Colors.surfaceSecondary, true: Colors.primary }}
+              thumbColor={remindersEnabled ? '#FFFFFF' : Colors.textMuted}
+            />
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* Permission Status */}
+          <View style={styles.detailRow}>
+            <View style={styles.detailIconBox}>
+              <Ionicons
+                name={permissionGranted ? 'notifications-outline' : 'notifications-off-outline'}
+                size={16}
+                color={permissionGranted ? Colors.success : Colors.warning}
+              />
+            </View>
+            <View style={styles.detailContent}>
+              <AppText variant="caption" color={Colors.textMuted}>Notification Permission</AppText>
+              <View style={styles.statusPillInline}>
+                <View
+                  style={[
+                    styles.statusDot,
+                    {
+                      backgroundColor: permissionGranted
+                        ? Colors.success
+                        : permissionStatus === 'denied'
+                        ? Colors.danger
+                        : Colors.warning,
+                    },
+                  ]}
+                />
+                <AppText
+                  variant="body"
+                  color={
+                    permissionGranted
+                      ? Colors.success
+                      : permissionStatus === 'denied'
+                      ? Colors.danger
+                      : Colors.warning
+                  }
+                  style={{ fontWeight: '600' }}
+                >
+                  {permissionGranted
+                    ? 'Active / Granted'
+                    : permissionStatus === 'denied'
+                    ? 'Denied / Blocked'
+                    : 'Not Requested'}
+                </AppText>
+              </View>
+            </View>
+          </View>
+
+          {/* Action to open settings if permission denied */}
+          {!permissionGranted && (
+            <View style={styles.permissionActionRow}>
+              <AppButton
+                title="Enable in Device Settings"
+                variant="outline"
+                size="sm"
+                icon={<Ionicons name="settings-outline" size={14} color={Colors.primary} />}
+                onPress={handleOpenSettings}
+                style={styles.settingsButton}
+              />
+            </View>
+          )}
+
+          {/* Clarification banner */}
+          <View style={styles.infoBanner}>
+            <Ionicons name="information-circle-outline" size={16} color={Colors.textMuted} style={{ marginRight: 6, marginTop: 1 }} />
+            <AppText variant="caption" color={Colors.textMuted} style={{ flex: 1, lineHeight: 16 }}>
+              Disabling device reminders silences alerts on this device but does not delete or alter your medication routines in MongoDB.
+            </AppText>
+          </View>
+
+          {/* Send Test Reminder Button */}
+          {permissionGranted && remindersEnabled && (
+            <View style={styles.testReminderRow}>
+              <AppButton
+                title={isTestingReminder ? 'Scheduling Test...' : 'Send Test Reminder (5s)'}
+                variant="secondary"
+                size="sm"
+                icon={<Ionicons name="time-outline" size={14} color={Colors.textPrimary} />}
+                loading={isTestingReminder}
+                onPress={handleSendTestReminder}
+              />
+            </View>
+          )}
         </AppCard>
 
         {/* Sync & Refresh Action */}
@@ -273,5 +466,41 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     borderColor: 'rgba(239, 68, 68, 0.35)',
+  },
+  reminderHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  reminderSubtitle: {
+    fontSize: Typography.size.caption,
+    marginTop: -Spacing.xs,
+    marginBottom: Spacing.xs,
+    lineHeight: 18,
+  },
+  statusPillInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  permissionActionRow: {
+    marginTop: Spacing.sm,
+  },
+  settingsButton: {
+    borderColor: Colors.primary,
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.07)',
+    borderRadius: Radius.sm,
+    padding: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  testReminderRow: {
+    marginTop: Spacing.md,
+    alignItems: 'flex-start',
   },
 });

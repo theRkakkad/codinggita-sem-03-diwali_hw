@@ -331,6 +331,7 @@ const markDoseAsTaken = async (req, res) => {
     }
 
     await doseEvent.save();
+    await doseEvent.populate('medicineId', 'name dosage type instructions frequency');
 
     return res.status(200).json({
       success: true,
@@ -388,6 +389,7 @@ const markDoseAsSkipped = async (req, res) => {
     }
 
     await doseEvent.save();
+    await doseEvent.populate('medicineId', 'name dosage type instructions frequency');
 
     return res.status(200).json({
       success: true,
@@ -446,6 +448,7 @@ const confirmDoseAsMissed = async (req, res) => {
     }
 
     await doseEvent.save();
+    await doseEvent.populate('medicineId', 'name dosage type instructions frequency');
 
     return res.status(200).json({
       success: true,
@@ -503,6 +506,7 @@ const markDoseAsUnconfirmed = async (req, res) => {
     }
 
     await doseEvent.save();
+    await doseEvent.populate('medicineId', 'name dosage type instructions frequency');
 
     return res.status(200).json({
       success: true,

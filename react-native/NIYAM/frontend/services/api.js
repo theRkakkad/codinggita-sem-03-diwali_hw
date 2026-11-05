@@ -55,6 +55,12 @@ api.interceptors.request.use(
     } catch (err) {
       console.warn('Failed to retrieve auth token for request interceptor:', err);
     }
+
+    // Automatically remove Content-Type for multipart FormData so bundler/network assigns the boundary correctly
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
+
     return config;
   },
   (error) => Promise.reject(error)

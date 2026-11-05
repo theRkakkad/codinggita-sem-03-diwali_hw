@@ -1,4 +1,6 @@
-import api from './api';
+import { Platform } from 'react-native';
+import api, { getApiBaseUrl } from './api';
+import { authStorage } from './authStorage';
 
 /**
  * Normalizes a backend medicine MongoDB document for consistent frontend consumption.
@@ -49,6 +51,7 @@ export const normalizeMedicine = (item) => {
         mimeType: prescription.mimeType,
         size: prescription.fileSize,
         uri: prescription.fileUrl,
+        uploadedAt: prescription.uploadedAt,
       }
     : item.attachment || null;
 
@@ -165,7 +168,7 @@ export const medicineService = {
     const createdMedicine = response.data?.medicine;
 
     // If an attachment file was provided, upload it to /api/medicines/:id/prescription
-    if (medicineData.attachment?.uri && createdMedicine?._id) {
+    if (medicineData.attachment && (medicineData.attachment.uri || medicineData.attachment.file)) {
       try {
         const uploadedWithRx = await this.uploadPrescription(
           createdMedicine._id,
@@ -174,6 +177,11 @@ export const medicineService = {
         return normalizeMedicine(uploadedWithRx.medicine || createdMedicine);
       } catch (attachErr) {
         console.warn('Prescription upload warning on create:', attachErr.message);
+        const err = new Error(
+          `Medicine "${createdMedicine.name}" was saved, but prescription upload failed: ${attachErr.message}`
+        );
+        err.createdMedicine = normalizeMedicine(createdMedicine);
+        throw err;
       }
     }
 
@@ -226,19 +234,35 @@ export const medicineService = {
     const response = await api.put(`/api/medicines/${id}`, payload);
     let updatedMedicine = response.data?.medicine;
 
-    // Check if attachment was newly selected or removed
-    if (updates.attachment?.uri && !updates.attachment.uri.startsWith('http')) {
+    // Check if attachment was newly selected, replaced, or removed
+    const isNewAttachment = Boolean(
+      updates.attachment &&
+        (updates.attachment.isNew ||
+          (updates.attachment.uri &&
+            (updates.attachment.uri.startsWith('file:') ||
+              updates.attachment.uri.startsWith('blob:') ||
+              updates.attachment.uri.startsWith('content:') ||
+              updates.attachment.uri.startsWith('data:'))) ||
+          updates.attachment.file)
+    );
+
+    if (isNewAttachment) {
       try {
         const uploaded = await this.uploadPrescription(id, updates.attachment);
         updatedMedicine = uploaded.medicine || updatedMedicine;
       } catch (rxErr) {
         console.warn('Prescription upload warning on update:', rxErr.message);
+        throw rxErr;
       }
     } else if (updates.attachment === null && updates.hadAttachment) {
       try {
         await this.deletePrescription(id);
+        if (updatedMedicine) {
+          updatedMedicine.prescription = undefined;
+        }
       } catch (rxErr) {
         console.warn('Prescription deletion warning on update:', rxErr.message);
+        throw rxErr;
       }
     }
 
@@ -268,16 +292,35 @@ export const medicineService = {
     const fileName = file.name || (file.type === 'pdf' ? 'prescription.pdf' : 'prescription.jpg');
     const mimeType = file.mimeType || (file.type === 'pdf' ? 'application/pdf' : 'image/jpeg');
 
-    formData.append('prescription', {
-      uri: file.uri,
-      name: fileName,
-      type: mimeType,
-    });
+    if (Platform.OS === 'web' && file.file instanceof File) {
+      formData.append('prescription', file.file, fileName);
+    } else if (Platform.OS === 'web' && file.uri && file.uri.startsWith('blob:')) {
+      try {
+        const blobRes = await fetch(file.uri);
+        const blob = await blobRes.blob();
+        formData.append('prescription', blob, fileName);
+      } catch (e) {
+        formData.append('prescription', {
+          uri: file.uri,
+          name: fileName,
+          type: mimeType,
+        });
+      }
+    } else {
+      formData.append('prescription', {
+        uri: file.uri,
+        name: fileName,
+        type: mimeType,
+      });
+    }
+
+    const headers = {};
+    if (Platform.OS !== 'web') {
+      headers['Content-Type'] = 'multipart/form-data';
+    }
 
     const response = await api.post(`/api/medicines/${id}/prescription`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers,
     });
 
     return response.data;
@@ -292,6 +335,22 @@ export const medicineService = {
   async deletePrescription(id) {
     const response = await api.delete(`/api/medicines/${id}/prescription`);
     return response.data;
+  },
+
+  /**
+   * Resolve authenticated streaming or download URL for prescription
+   * @param {string} id
+   * @param {boolean} [download=false]
+   * @returns {Promise<string>}
+   */
+  async getPrescriptionUrl(id, download = false) {
+    const token = await authStorage.getToken();
+    const baseUrl = getApiBaseUrl();
+    const query = [];
+    if (download) query.push('download=true');
+    if (token) query.push(`token=${encodeURIComponent(token)}`);
+    const qStr = query.length > 0 ? `?${query.join('&')}` : '';
+    return `${baseUrl}/api/medicines/${id}/prescription${qStr}`;
   },
 };
 

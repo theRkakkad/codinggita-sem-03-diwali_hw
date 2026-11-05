@@ -15,19 +15,19 @@ const authMiddleware = (req, res, next) => {
     });
   }
 
+  let token = null;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({
-      success: false,
-      message: 'Access denied. No token provided.',
-    });
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query && req.query.token) {
+    token = req.query.token;
   }
 
-  const token = authHeader.split(' ')[1];
   if (!token || token.trim().length === 0) {
     return res.status(401).json({
       success: false,
-      message: 'Access denied. Invalid token format.',
+      message: 'Access denied. No token provided.',
     });
   }
 

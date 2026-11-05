@@ -6,9 +6,11 @@ import {
   Pressable,
   Image,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Linking from 'expo-linking';
 
 import { Colors } from '../../constants/colors';
 import { Spacing } from '../../constants/spacing';
@@ -26,11 +28,22 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 export default function PrescriptionImageViewerModal({
   visible,
   imageUri,
+  downloadUrl = null,
   fileName = 'Prescription Image',
   fileSizeText = null,
   onClose,
 }) {
   const hasValidUri = Boolean(imageUri && typeof imageUri === 'string');
+  const targetDownloadUrl = downloadUrl || (hasValidUri && imageUri.startsWith('http') ? imageUri : null);
+
+  const handleDownload = async () => {
+    if (!targetDownloadUrl) return;
+    try {
+      await Linking.openURL(targetDownloadUrl);
+    } catch (err) {
+      Alert.alert('Download Failed', 'Could not open prescription file URL.');
+    }
+  };
 
   return (
     <Modal
@@ -120,17 +133,30 @@ export default function PrescriptionImageViewerModal({
             <View style={styles.footerInfo}>
               <Ionicons name="shield-checkmark-outline" size={16} color={Colors.success} style={{ marginRight: 6 }} />
               <AppText variant="caption" color={Colors.textSecondary}>
-                Stored locally for your reference
+                Protected medical document
               </AppText>
             </View>
 
-            <AppButton
-              title="Close Preview"
-              variant="secondary"
-              size="sm"
-              onPress={onClose}
-              style={styles.footerCloseBtn}
-            />
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {targetDownloadUrl ? (
+                <AppButton
+                  title="Open / Download"
+                  variant="outline"
+                  size="sm"
+                  icon={<Ionicons name="download-outline" size={14} color={Colors.primary} />}
+                  onPress={handleDownload}
+                  style={{ marginRight: Spacing.xs }}
+                />
+              ) : null}
+
+              <AppButton
+                title="Close"
+                variant="secondary"
+                size="sm"
+                onPress={onClose}
+                style={styles.footerCloseBtn}
+              />
+            </View>
           </View>
         </SafeAreaView>
       </View>

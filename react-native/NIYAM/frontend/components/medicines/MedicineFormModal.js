@@ -109,6 +109,7 @@ export default function MedicineFormModal({
 
   // Validation error states
   const [errors, setErrors] = useState({});
+  const [apiError, setApiError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Pre-fill or reset form whenever modal visibility or initialData changes
@@ -177,6 +178,7 @@ export default function MedicineFormModal({
         setAttachment(null); // Clean attachment state for new medicine
       }
       setErrors({});
+      setApiError(null);
       setIsSubmitting(false);
     }
   }, [visible, mode, initialData]);
@@ -278,61 +280,74 @@ export default function MedicineFormModal({
   };
 
   // Save handler with duplicate submission guard
-  const handleSave = () => {
+  const handleSave = async () => {
     if (isSubmitting) return;
 
     if (!validateForm()) {
       return;
     }
 
+    setApiError(null);
     setIsSubmitting(true);
 
-    // Format time representation
-    let formattedTime = 'As prescribed';
-    if (frequency !== 'As needed' && reminderTimes.length > 0) {
-      formattedTime = reminderTimes.join(', ');
-    }
+    try {
+      // Format time representation
+      let formattedTime = 'As prescribed';
+      if (frequency !== 'As needed' && reminderTimes.length > 0) {
+        formattedTime = reminderTimes.join(', ');
+      }
 
-    if (mode === 'add') {
-      const newMedicine = {
-        name: name.trim(),
-        dosage: dosage.trim(),
-        type,
-        frequency,
-        time: formattedTime,
-        reminderTimes: frequency === 'As needed' ? [] : reminderTimes,
-        status: 'Active', // Default status for newly created prescriptions
-        startDate: startDate.trim(),
-        endDate: endDate.trim() ? endDate.trim() : undefined,
-        instructions:
-          instructions.trim() || 'Take as prescribed by physician.',
-        category:
-          type === 'Capsule' || type === 'Tablet' ? 'Prescription' : type,
-        attachment: attachment ? { ...attachment } : null,
-        rxDocument: attachment ? attachment.name : null,
-      };
-      onSave(newMedicine);
-    } else {
-      // In edit mode: preserve existing ID and current Active/Paused/Completed status
-      const updatedMedicine = {
-        ...initialData,
-        name: name.trim(),
-        dosage: dosage.trim(),
-        type,
-        frequency,
-        time: formattedTime,
-        reminderTimes: frequency === 'As needed' ? [] : reminderTimes,
-        startDate: startDate.trim(),
-        endDate: endDate.trim() ? endDate.trim() : undefined,
-        instructions:
-          instructions.trim() || 'Take as prescribed by physician.',
-        id: initialData.id || initialData._id,
-        status: initialData.status, // Preserve status strictly
-        category: initialData.category || 'Prescription',
-        attachment: attachment ? { ...attachment } : null,
-        rxDocument: attachment ? attachment.name : null,
-      };
-      onSave(updatedMedicine);
+      if (mode === 'add') {
+        const newMedicine = {
+          name: name.trim(),
+          dosage: dosage.trim(),
+          type,
+          frequency,
+          time: formattedTime,
+          reminderTimes: frequency === 'As needed' ? [] : reminderTimes,
+          status: 'Active', // Default status for newly created prescriptions
+          startDate: startDate.trim(),
+          endDate: endDate.trim() ? endDate.trim() : undefined,
+          instructions:
+            instructions.trim() || 'Take as prescribed by physician.',
+          category:
+            type === 'Capsule' || type === 'Tablet' ? 'Prescription' : type,
+          attachment: attachment ? { ...attachment } : null,
+          rxDocument: attachment ? attachment.name : null,
+        };
+        await onSave(newMedicine);
+      } else {
+        // In edit mode: preserve existing ID and current Active/Paused/Completed status
+        const hadAttachment = Boolean(
+          initialData?.attachment ||
+            initialData?.prescription ||
+            initialData?.rxDocument
+        );
+        const updatedMedicine = {
+          ...initialData,
+          name: name.trim(),
+          dosage: dosage.trim(),
+          type,
+          frequency,
+          time: formattedTime,
+          reminderTimes: frequency === 'As needed' ? [] : reminderTimes,
+          startDate: startDate.trim(),
+          endDate: endDate.trim() ? endDate.trim() : undefined,
+          instructions:
+            instructions.trim() || 'Take as prescribed by physician.',
+          id: initialData.id || initialData._id,
+          status: initialData.status, // Preserve status strictly
+          category: initialData.category || 'Prescription',
+          attachment: attachment ? { ...attachment } : null,
+          hadAttachment,
+          rxDocument: attachment ? attachment.name : null,
+        };
+        await onSave(updatedMedicine);
+      }
+    } catch (err) {
+      setApiError(err.message || 'Failed to save medication.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -977,6 +992,16 @@ export default function MedicineFormModal({
             </View>
           </ScrollView>
 
+          {/* API ERROR BANNER */}
+          {apiError ? (
+            <View style={styles.apiErrorBanner}>
+              <Ionicons name="alert-circle-outline" size={18} color={Colors.danger} style={{ marginRight: 8 }} />
+              <AppText variant="caption" color={Colors.danger} style={{ flex: 1 }}>
+                {apiError}
+              </AppText>
+            </View>
+          ) : null}
+
           {/* FOOTER ACTIONS */}
           <View style={styles.footer}>
             <AppButton
@@ -984,6 +1009,7 @@ export default function MedicineFormModal({
               variant="secondary"
               size="md"
               onPress={onClose}
+              disabled={isSubmitting}
               style={styles.cancelButton}
             />
 
@@ -1000,6 +1026,7 @@ export default function MedicineFormModal({
               }
               onPress={handleSave}
               disabled={isSubmitting}
+              loading={isSubmitting}
               style={styles.saveButton}
             />
           </View>
@@ -1013,6 +1040,19 @@ const styles = StyleSheet.create({
   modalSafeArea: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  apiErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(235, 87, 87, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(235, 87, 87, 0.3)',
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginHorizontal: Spacing.screenHorizontal,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
   },
   keyboardContainer: {
     flex: 1,

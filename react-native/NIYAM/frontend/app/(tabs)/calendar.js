@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 
 import { Colors } from '../../constants/colors';
 import { Spacing } from '../../constants/spacing';
@@ -85,6 +86,12 @@ export default function CalendarScreen() {
   useEffect(() => {
     loadMonthEvents();
   }, [loadMonthEvents]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadMonthEvents();
+    }, [loadMonthEvents])
+  );
 
   // Group events by YYYY-MM-DD date key
   const activeRecords = useMemo(() => {

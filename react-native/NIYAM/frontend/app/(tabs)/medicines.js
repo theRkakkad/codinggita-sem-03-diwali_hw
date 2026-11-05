@@ -13,6 +13,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import * as Linking from 'expo-linking';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 
 import { Colors } from '../../constants/colors';
 import { Spacing } from '../../constants/spacing';
@@ -27,11 +31,14 @@ import {
 import MedicineFormModal from '../../components/medicines/MedicineFormModal';
 import PrescriptionImageViewerModal from '../../components/medicines/PrescriptionImageViewerModal';
 import { formatFileSize } from '../../components/medicines/PrescriptionAttachmentPicker';
-import { medicineService } from '../../services/medicineService';
+import { medicineService, normalizeMedicine } from '../../services/medicineService';
+import { notificationService } from '../../services/notificationService';
 
 // NIYAM Medication Management Screen (Phase 09 & Phase 19 Integration)
 // Provides searchable, filterable prescription list with interactive details, pause/resume, and delete actions connected to MongoDB.
 export default function MedicinesScreen() {
+  const { highlightId } = useLocalSearchParams();
+
   // Local state for medicines list and UI controls
   const [medicines, setMedicines] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -41,6 +48,7 @@ export default function MedicinesScreen() {
   const [activeFilter, setActiveFilter] = useState('All');
   const [selectedMedicine, setSelectedMedicine] = useState(null);
   const [feedbackBanner, setFeedbackBanner] = useState(null);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
 
   // Form modal states (Phase 10)
   const [isFormVisible, setIsFormVisible] = useState(false);
@@ -108,9 +116,21 @@ export default function MedicinesScreen() {
     }
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      loadMedicines();
+    }, [loadMedicines])
+  );
+
+  // Auto-focus and open medicine detail modal when arriving from notification tap
   useEffect(() => {
-    loadMedicines();
-  }, [loadMedicines]);
+    if (highlightId && medicines.length > 0) {
+      const match = medicines.find((m) => m.id === highlightId || m._id === highlightId);
+      if (match) {
+        setSelectedMedicine(match);
+      }
+    }
+  }, [highlightId, medicines]);
 
   // Add Medicine handler (Phase 10)
   const handleAddMedicine = () => {
@@ -132,11 +152,21 @@ export default function MedicinesScreen() {
     try {
       if (formMode === 'add') {
         const created = await medicineService.createMedicine(savedData);
-        setMedicines((prev) => [created, ...prev]);
+        try {
+          await notificationService.scheduleMedicineReminders(created);
+        } catch (notifErr) {
+          console.warn('Failed to schedule local reminders for new medicine:', notifErr);
+        }
+        setMedicines((prev) => [created, ...prev.filter((m) => m.id !== created.id)]);
         setFeedbackBanner(`Added ${created.name} (${created.dosage}) to your medicines.`);
       } else {
         const id = savedData.id || savedData._id;
         const updated = await medicineService.updateMedicine(id, savedData);
+        try {
+          await notificationService.scheduleMedicineReminders(updated);
+        } catch (notifErr) {
+          console.warn('Failed to reschedule local reminders for updated medicine:', notifErr);
+        }
         setMedicines((prev) =>
           prev.map((item) => ((item.id === id || item._id === id) ? updated : item))
         );
@@ -150,8 +180,214 @@ export default function MedicinesScreen() {
       setIsFormVisible(false);
       setTimeout(() => setFeedbackBanner(null), 3500);
     } catch (err) {
-      Alert.alert('Save Failed', err.message || 'Failed to save medication.');
+      if (err.createdMedicine) {
+        try {
+          await notificationService.scheduleMedicineReminders(err.createdMedicine);
+        } catch (notifErr) {
+          console.warn('Failed to schedule local reminders:', notifErr);
+        }
+        setMedicines((prev) => [err.createdMedicine, ...prev]);
+        setIsFormVisible(false);
+        Alert.alert('Prescription Notice', err.message);
+      } else {
+        // Re-throw so MedicineFormModal can display the error inline
+        throw err;
+      }
     }
+  };
+
+  // View or inspect prescription attachment with authenticated preview
+  const handleViewAttachment = async (attachment, medicineId) => {
+    if (!attachment) return;
+
+    if (attachment.type === 'image') {
+      try {
+        const streamUrl = await medicineService.getPrescriptionUrl(medicineId, false);
+        const downloadUrl = await medicineService.getPrescriptionUrl(medicineId, true);
+        setViewerAttachment({
+          ...attachment,
+          imageUri: streamUrl,
+          downloadUrl: downloadUrl,
+        });
+      } catch (err) {
+        Alert.alert('Error', 'Unable to resolve prescription preview URL.');
+      }
+    } else {
+      // PDF document preview & download action
+      const sizeLabel = formatFileSize(attachment.size);
+      Alert.alert(
+        'Prescription Document (PDF)',
+        `File: ${attachment.name}\n${sizeLabel ? `Size: ${sizeLabel}\n` : ''}Format: PDF Document\n\nWould you like to open or download this document through your authenticated session?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Open / Download PDF',
+            onPress: async () => {
+              try {
+                const downloadUrl = await medicineService.getPrescriptionUrl(medicineId, true);
+                await Linking.openURL(downloadUrl);
+              } catch (openErr) {
+                Alert.alert('Open Failed', 'Could not open PDF file.');
+              }
+            },
+          },
+        ]
+      );
+    }
+  };
+
+  // Pick new image or PDF and upload to medicine
+  const handlePickAndUploadPrescription = (medicineId) => {
+    Alert.alert(
+      'Attach Prescription',
+      'Select a prescription document source:',
+      [
+        {
+          text: 'Choose Image (Gallery)',
+          onPress: () => performPrescriptionUpload(medicineId, 'image'),
+        },
+        {
+          text: 'Choose PDF Document',
+          onPress: () => performPrescriptionUpload(medicineId, 'pdf'),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  const performPrescriptionUpload = async (medicineId, docType) => {
+    try {
+      let fileToUpload = null;
+
+      if (docType === 'image') {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert(
+            'Permission Denied',
+            'Photo library permission was denied. Please allow photo access in device settings.'
+          );
+          return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: false,
+          quality: 0.85,
+          base64: false,
+        });
+
+        if (result.canceled || !result.assets?.length) return;
+        const asset = result.assets[0];
+
+        if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+          Alert.alert('File Too Large', 'Selected image exceeds the 5 MB limit. Please select a smaller file.');
+          return;
+        }
+
+        fileToUpload = {
+          uri: asset.uri,
+          name: asset.fileName || `prescription_${Date.now()}.jpg`,
+          mimeType: asset.mimeType || 'image/jpeg',
+          type: 'image',
+          file: asset.file || null,
+        };
+      } else {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: 'application/pdf',
+          copyToCacheDirectory: true,
+          multiple: false,
+        });
+
+        if (result.canceled || !result.assets?.length) return;
+        const asset = result.assets[0];
+
+        if (asset.size && asset.size > 5 * 1024 * 1024) {
+          Alert.alert('File Too Large', 'Selected PDF document exceeds the 5 MB limit. Please select a document smaller than 5 MB.');
+          return;
+        }
+
+        fileToUpload = {
+          uri: asset.uri,
+          name: asset.name || `prescription_${Date.now()}.pdf`,
+          mimeType: asset.mimeType || 'application/pdf',
+          type: 'pdf',
+          file: asset.file || null,
+        };
+      }
+
+      if (!fileToUpload) return;
+
+      setIsUploadingAttachment(true);
+      const res = await medicineService.uploadPrescription(medicineId, fileToUpload);
+      const updatedMed = res.medicine ? normalizeMedicine(res.medicine) : null;
+
+      if (updatedMed) {
+        setMedicines((prev) =>
+          prev.map((m) => (m.id === medicineId || m._id === medicineId ? updatedMed : m))
+        );
+        if (selectedMedicine && (selectedMedicine.id === medicineId || selectedMedicine._id === medicineId)) {
+          setSelectedMedicine(updatedMed);
+        }
+      } else {
+        const refreshed = await medicineService.getMedicineById(medicineId);
+        setMedicines((prev) =>
+          prev.map((m) => (m.id === medicineId || m._id === medicineId ? refreshed : m))
+        );
+        if (selectedMedicine) {
+          setSelectedMedicine(refreshed);
+        }
+      }
+
+      setFeedbackBanner('Prescription document attached successfully.');
+      setTimeout(() => setFeedbackBanner(null), 3500);
+    } catch (err) {
+      Alert.alert('Upload Failed', err.message || 'Failed to upload prescription attachment.');
+    } finally {
+      setIsUploadingAttachment(false);
+    }
+  };
+
+  // Direct remove attachment handler with confirmation
+  const handleRemoveAttachmentDirect = (medicineId) => {
+    Alert.alert(
+      'Remove Attachment',
+      'Are you sure you want to remove this prescription document from this medicine?',
+      [
+        { text: 'Keep Attachment', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsUploadingAttachment(true);
+              await medicineService.deletePrescription(medicineId);
+              setMedicines((prev) =>
+                prev.map((m) => {
+                  if (m.id === medicineId || m._id === medicineId) {
+                    return { ...m, attachment: null, prescription: undefined, rxDocument: null };
+                  }
+                  return m;
+                })
+              );
+              if (selectedMedicine && (selectedMedicine.id === medicineId || selectedMedicine._id === medicineId)) {
+                setSelectedMedicine((prev) => ({
+                  ...prev,
+                  attachment: null,
+                  prescription: undefined,
+                  rxDocument: null,
+                }));
+              }
+              setFeedbackBanner('Prescription attachment removed.');
+              setTimeout(() => setFeedbackBanner(null), 3500);
+            } catch (err) {
+              Alert.alert('Removal Failed', err.message || 'Failed to remove prescription.');
+            } finally {
+              setIsUploadingAttachment(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Pause / Resume handler connected to backend
@@ -164,6 +400,18 @@ export default function MedicinesScreen() {
 
     try {
       const updated = await medicineService.updateMedicine(id, { status: newStatus });
+
+      // Update notifications according to active status
+      try {
+        if (newStatus === 'Paused') {
+          await notificationService.cancelMedicineReminders(id);
+        } else {
+          await notificationService.scheduleMedicineReminders(updated);
+        }
+      } catch (notifErr) {
+        console.warn('Failed to sync reminders for pause/resume:', notifErr);
+      }
+
       setMedicines((prev) =>
         prev.map((item) => ((item.id === id || item._id === id) ? updated : item))
       );
@@ -201,12 +449,30 @@ export default function MedicinesScreen() {
           onPress: async () => {
             try {
               await medicineService.deleteMedicine(id);
+
+              // Cancel all scheduled reminders for the deleted medicine
+              try {
+                await notificationService.cancelMedicineReminders(id);
+              } catch (notifErr) {
+                console.warn('Failed to cancel reminders on delete:', notifErr);
+              }
+
               setMedicines((prev) => prev.filter((item) => item.id !== id && item._id !== id));
               setSelectedMedicine(null);
               setFeedbackBanner(`Removed ${med.name} from your list.`);
               setTimeout(() => setFeedbackBanner(null), 3500);
             } catch (err) {
-              Alert.alert('Delete Failed', err.message || 'Failed to delete medicine.');
+              if (err.status === 404) {
+                try {
+                  await notificationService.cancelMedicineReminders(id);
+                } catch (e) {}
+                setMedicines((prev) => prev.filter((item) => item.id !== id && item._id !== id));
+                setSelectedMedicine(null);
+                setFeedbackBanner(`Medicine was already removed.`);
+                setTimeout(() => setFeedbackBanner(null), 3500);
+              } else {
+                Alert.alert('Delete Failed', err.message || 'Failed to delete medicine.');
+              }
             }
           },
         },
@@ -600,107 +866,157 @@ export default function MedicinesScreen() {
 
                     if (!attachment) {
                       return (
-                        <View style={styles.noAttachmentCard}>
-                          <Ionicons
-                            name="document-outline"
-                            size={18}
-                            color={Colors.textMuted}
-                            style={styles.docIcon}
-                          />
-                          <View style={styles.docInfo}>
-                            <AppText variant="secondary" color={Colors.textMuted}>
-                              No prescription document attached
-                            </AppText>
+                        <View style={{ marginTop: Spacing.xs }}>
+                          <View style={styles.noAttachmentCard}>
+                            <Ionicons
+                              name="document-outline"
+                              size={18}
+                              color={Colors.textMuted}
+                              style={styles.docIcon}
+                            />
+                            <View style={styles.docInfo}>
+                              <AppText variant="secondary" color={Colors.textMuted}>
+                                No prescription document attached
+                              </AppText>
+                            </View>
+                            <Pressable
+                              onPress={() => handlePickAndUploadPrescription(selectedMedicine.id || selectedMedicine._id)}
+                              style={styles.rxAttachChip}
+                              disabled={isUploadingAttachment}
+                              accessibilityLabel="Attach prescription document"
+                            >
+                              <Ionicons name="attach" size={14} color={Colors.primary} style={{ marginRight: 4 }} />
+                              <AppText variant="caption" color={Colors.primary} style={{ fontWeight: '600' }}>
+                                Attach
+                              </AppText>
+                            </Pressable>
                           </View>
+
+                          {isUploadingAttachment && (
+                            <View style={styles.rxUploadingBar}>
+                              <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 8 }} />
+                              <AppText variant="caption" color={Colors.primary}>
+                                Uploading prescription...
+                              </AppText>
+                            </View>
+                          )}
                         </View>
                       );
                     }
 
                     const isImg = attachment.type === 'image';
                     const sizeLabel = formatFileSize(attachment.size);
+                    const medId = selectedMedicine.id || selectedMedicine._id;
 
                     return (
-                      <Pressable
-                        style={({ pressed }) => [
-                          styles.attachmentCard,
-                          pressed && styles.attachmentCardPressed,
-                        ]}
-                        onPress={() => {
-                          if (isImg) {
-                            setViewerAttachment(attachment);
-                          } else {
-                            Alert.alert(
-                              'Prescription Document',
-                              `File: ${attachment.name}\n${
-                                sizeLabel ? `Size: ${sizeLabel}\n` : ''
-                              }Format: PDF Document\n\nDirect in-app PDF rendering is not supported on this platform. This prescription file remains safely attached to your medication record for personal reference.`,
-                              [{ text: 'Close', style: 'default' }]
-                            );
-                          }
-                        }}
-                        accessibilityLabel={`Prescription attachment: ${attachment.name}`}
-                      >
-                        {isImg ? (
-                          <View style={styles.detailThumbnailBox}>
-                            {attachment.uri ? (
-                              <Image
-                                source={{ uri: attachment.uri }}
-                                style={styles.detailThumbnail}
-                                resizeMode="cover"
-                              />
-                            ) : (
+                      <View style={{ marginTop: Spacing.xs }}>
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.attachmentCard,
+                            pressed && styles.attachmentCardPressed,
+                          ]}
+                          onPress={() => handleViewAttachment(attachment, medId)}
+                          accessibilityLabel={`Prescription attachment: ${attachment.name}`}
+                        >
+                          {isImg ? (
+                            <View style={styles.detailThumbnailBox}>
                               <MaterialCommunityIcons
                                 name="image-outline"
                                 size={22}
                                 color={Colors.primary}
                               />
-                            )}
-                            <View style={styles.detailZoomIcon}>
-                              <Ionicons name="expand-outline" size={10} color="#FFFFFF" />
+                              <View style={styles.detailZoomIcon}>
+                                <Ionicons name="expand-outline" size={10} color="#FFFFFF" />
+                              </View>
+                            </View>
+                          ) : (
+                            <View style={styles.detailPdfBox}>
+                              <MaterialCommunityIcons
+                                name="file-pdf-box"
+                                size={24}
+                                color={Colors.primary}
+                              />
+                            </View>
+                          )}
+
+                          <View style={styles.docInfo}>
+                            <AppText
+                              variant="secondary"
+                              color={Colors.textPrimary}
+                              numberOfLines={1}
+                              ellipsizeMode="middle"
+                              style={styles.boldText}
+                            >
+                              {attachment.name}
+                            </AppText>
+                            <View style={styles.docSubRow}>
+                              <AppText variant="caption" color={Colors.textMuted}>
+                                {isImg ? 'Image attachment' : 'PDF document'}
+                                {sizeLabel ? ` • ${sizeLabel}` : ''}
+                              </AppText>
+                              <AppText
+                                variant="caption"
+                                color={Colors.primary}
+                                style={styles.viewLinkText}
+                              >
+                                {isImg ? 'Tap to preview' : 'Tap to download'}
+                              </AppText>
                             </View>
                           </View>
-                        ) : (
-                          <View style={styles.detailPdfBox}>
-                            <MaterialCommunityIcons
-                              name="file-pdf-box"
-                              size={24}
-                              color={Colors.primary}
-                            />
-                          </View>
-                        )}
 
-                        <View style={styles.docInfo}>
-                          <AppText
-                            variant="secondary"
-                            color={Colors.textPrimary}
-                            numberOfLines={1}
-                            ellipsizeMode="middle"
-                            style={styles.boldText}
+                          <Ionicons
+                            name={isImg ? 'eye-outline' : 'download-outline'}
+                            size={18}
+                            color={Colors.primary}
+                            style={{ marginLeft: 6 }}
+                          />
+                        </Pressable>
+
+                        {/* Prescription Actions Toolbar */}
+                        <View style={styles.rxActionRow}>
+                          <Pressable
+                            onPress={() => handleViewAttachment(attachment, medId)}
+                            style={styles.rxSmallBtn}
+                            disabled={isUploadingAttachment}
                           >
-                            {attachment.name}
-                          </AppText>
-                          <View style={styles.docSubRow}>
-                            <AppText variant="caption" color={Colors.textMuted}>
-                              {isImg ? 'Image attachment' : 'PDF document'}
-                              {sizeLabel ? ` • ${sizeLabel}` : ''}
+                            <Ionicons name={isImg ? 'eye-outline' : 'download-outline'} size={13} color={Colors.primary} style={{ marginRight: 4 }} />
+                            <AppText variant="caption" color={Colors.primary} style={{ fontWeight: '600' }}>
+                              {isImg ? 'View Image' : 'Download PDF'}
                             </AppText>
-                            <AppText
-                              variant="caption"
-                              color={Colors.primary}
-                              style={styles.viewLinkText}
-                            >
-                              {isImg ? 'Tap to view' : 'Tap for info'}
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => handlePickAndUploadPrescription(medId)}
+                            style={styles.rxSmallBtn}
+                            disabled={isUploadingAttachment}
+                          >
+                            <Ionicons name="swap-horizontal-outline" size={13} color={Colors.textSecondary} style={{ marginRight: 4 }} />
+                            <AppText variant="caption" color={Colors.textSecondary} style={{ fontWeight: '500' }}>
+                              Replace
                             </AppText>
-                          </View>
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => handleRemoveAttachmentDirect(medId)}
+                            style={[styles.rxSmallBtn, styles.rxRemoveBtn]}
+                            disabled={isUploadingAttachment}
+                          >
+                            <Ionicons name="trash-outline" size={13} color={Colors.danger} style={{ marginRight: 4 }} />
+                            <AppText variant="caption" color={Colors.danger} style={{ fontWeight: '500' }}>
+                              Remove
+                            </AppText>
+                          </Pressable>
                         </View>
 
-                        <Ionicons
-                          name={isImg ? 'eye-outline' : 'information-circle-outline'}
-                          size={18}
-                          color={Colors.primary}
-                          style={{ marginLeft: 6 }}
-                        />
-                      </Pressable>
+                        {isUploadingAttachment && (
+                          <View style={styles.rxUploadingBar}>
+                            <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 8 }} />
+                            <AppText variant="caption" color={Colors.primary}>
+                              Updating prescription...
+                            </AppText>
+                          </View>
+                        )}
+                      </View>
                     );
                   })()}
                 </View>
@@ -762,7 +1078,8 @@ export default function MedicinesScreen() {
       {/* 7. PRESCRIPTION IMAGE LIGHTBOX MODAL (PHASE 11) */}
       <PrescriptionImageViewerModal
         visible={!!viewerAttachment}
-        imageUri={viewerAttachment?.uri}
+        imageUri={viewerAttachment?.imageUri || viewerAttachment?.displayUri || viewerAttachment?.uri}
+        downloadUrl={viewerAttachment?.downloadUrl}
         fileName={viewerAttachment?.name || 'Prescription Image'}
         fileSizeText={formatFileSize(viewerAttachment?.size)}
         onClose={() => setViewerAttachment(null)}
@@ -1157,6 +1474,46 @@ const styles = StyleSheet.create({
   },
   docInfo: {
     flex: 1,
+  },
+  rxAttachChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(230, 162, 60, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(230, 162, 60, 0.3)',
+    borderRadius: Radius.xs,
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 4,
+  },
+  rxActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginTop: Spacing.xs,
+    justifyContent: 'flex-end',
+  },
+  rxSmallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 5,
+    borderRadius: Radius.xs,
+  },
+  rxRemoveBtn: {
+    borderColor: 'rgba(216, 121, 112, 0.3)',
+    backgroundColor: 'rgba(216, 121, 112, 0.08)',
+  },
+  rxUploadingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.xs,
+    backgroundColor: 'rgba(230, 162, 60, 0.08)',
+    borderRadius: Radius.xs,
+    marginTop: Spacing.xs,
   },
   modalActions: {
     gap: Spacing.xs,

@@ -102,6 +102,12 @@ export default function PrescriptionAttachmentPicker({
         return;
       }
 
+      // Validate file size (5 MB limit)
+      if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+        setErrorMessage('File size exceeds the 5 MB limit. Please select an image under 5 MB.');
+        return;
+      }
+
       // Store attachment metadata locally
       onAttachmentChange({
         uri: asset.uri,
@@ -111,6 +117,8 @@ export default function PrescriptionAttachmentPicker({
         type: 'image',
         width: asset.width || null,
         height: asset.height || null,
+        file: asset.file || null,
+        isNew: true,
       });
       setErrorMessage(null);
     } catch (err) {
@@ -155,6 +163,12 @@ export default function PrescriptionAttachmentPicker({
         return;
       }
 
+      // Validate file size (5 MB limit)
+      if (asset.size && asset.size > 5 * 1024 * 1024) {
+        setErrorMessage('File size exceeds the 5 MB limit. Please select a PDF document under 5 MB.');
+        return;
+      }
+
       // Store attachment metadata locally
       onAttachmentChange({
         uri: asset.uri,
@@ -162,6 +176,8 @@ export default function PrescriptionAttachmentPicker({
         mimeType: asset.mimeType || 'application/pdf',
         size: asset.size || null,
         type: 'pdf',
+        file: asset.file || null,
+        isNew: true,
       });
       setErrorMessage(null);
     } catch (err) {

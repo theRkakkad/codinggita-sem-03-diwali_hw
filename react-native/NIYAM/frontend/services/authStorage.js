@@ -106,6 +106,65 @@ export const authStorage = {
       console.warn('SecureStore error saving user:', error);
     }
   },
+
+  /**
+   * Generic key-value storage getter for settings and local cache
+   * @param {string} key
+   * @returns {Promise<string|null>}
+   */
+  async getItem(key) {
+    try {
+      if (Platform.OS === 'web') {
+        if (typeof localStorage !== 'undefined') {
+          return localStorage.getItem(key);
+        }
+        return null;
+      }
+      return await SecureStore.getItemAsync(key);
+    } catch (error) {
+      console.warn(`SecureStore error reading key ${key}:`, error);
+      return null;
+    }
+  },
+
+  /**
+   * Generic key-value storage setter for settings and local cache
+   * @param {string} key
+   * @param {string} value
+   * @returns {Promise<void>}
+   */
+  async setItem(key, value) {
+    try {
+      if (Platform.OS === 'web') {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(key, value);
+        }
+        return;
+      }
+      await SecureStore.setItemAsync(key, value);
+    } catch (error) {
+      console.warn(`SecureStore error setting key ${key}:`, error);
+    }
+  },
+
+  /**
+   * Generic key-value storage remover
+   * @param {string} key
+   * @returns {Promise<void>}
+   */
+  async removeItem(key) {
+    try {
+      if (Platform.OS === 'web') {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem(key);
+        }
+        return;
+      }
+      await SecureStore.deleteItemAsync(key);
+    } catch (error) {
+      console.warn(`SecureStore error deleting key ${key}:`, error);
+    }
+  },
 };
 
 export default authStorage;
