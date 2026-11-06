@@ -718,102 +718,20 @@ export const ADHERENCE_RECORDS = {
   ],
 };
 
-/**
- * Calculate detailed statistics for a specific single day's dose events.
- *
- * Adherence = (Taken / Eligible) * 100
- * where Eligible = Taken + Skipped + Confirmed Missed.
- * Pending & Unconfirmed are excluded from eligible so they are never counted as failures.
- */
-export function calculateDayStats(doses = []) {
-  const total = doses.length;
-  const taken = doses.filter((d) => d.status === 'taken').length;
-  const skipped = doses.filter((d) => d.status === 'skipped').length;
-  const missed = doses.filter((d) => d.status === 'missed').length;
-  const pending = doses.filter((d) => d.status === 'pending').length;
-  const unconfirmed = doses.filter((d) => d.status === 'unconfirmed').length;
+import {
+  calculateAdherence,
+  calculateDayStats,
+  calculateMonthStats as calculateMonthStatsUtil,
+} from '../utils/adherence';
 
-  const eligible = taken + skipped + missed;
-  const adherenceRate = eligible > 0 ? Math.round((taken / eligible) * 100) : null;
-
-  // Visual indicator color mapping according to Phase 12 specification:
-  // - Green: All scheduled doses taken.
-  // - Amber: Some doses remain pending or were skipped.
-  // - Muted red: At least one user-confirmed missed dose.
-  // - Grey: No recorded activity or unconfirmed history.
-  let indicatorState = 'none'; // 'all_taken' | 'pending_or_skipped' | 'missed' | 'unconfirmed' | 'none'
-
-  if (total === 0) {
-    indicatorState = 'none';
-  } else if (missed > 0) {
-    indicatorState = 'missed'; // Muted red
-  } else if (pending > 0 || skipped > 0) {
-    indicatorState = 'pending_or_skipped'; // Amber
-  } else if (taken === total && total > 0) {
-    indicatorState = 'all_taken'; // Green
-  } else if (unconfirmed > 0) {
-    indicatorState = 'unconfirmed'; // Grey
-  }
-
-  return {
-    total,
-    taken,
-    skipped,
-    missed,
-    pending,
-    unconfirmed,
-    eligible,
-    adherenceRate,
-    indicatorState,
-  };
-}
+export { calculateAdherence, calculateDayStats };
 
 /**
  * Calculate dynamic monthly statistics for a given year and month (0-indexed).
- * Derived purely from sample records without hardcoded totals.
+ * Defaults to ADHERENCE_RECORDS when records are not provided.
  */
 export function calculateMonthStats(year, monthIndex, records = ADHERENCE_RECORDS) {
-  const monthStr = String(monthIndex + 1).padStart(2, '0');
-  const prefix = `${year}-${monthStr}`;
-
-  let totalScheduled = 0;
-  let taken = 0;
-  let skipped = 0;
-  let missed = 0;
-  let pending = 0;
-  let unconfirmed = 0;
-  let daysWithActivity = 0;
-
-  Object.entries(records).forEach(([dateKey, dayDoses]) => {
-    if (dateKey.startsWith(prefix) && Array.isArray(dayDoses) && dayDoses.length > 0) {
-      daysWithActivity += 1;
-      totalScheduled += dayDoses.length;
-      dayDoses.forEach((dose) => {
-        if (dose.status === 'taken') taken += 1;
-        else if (dose.status === 'skipped') skipped += 1;
-        else if (dose.status === 'missed') missed += 1;
-        else if (dose.status === 'pending') pending += 1;
-        else if (dose.status === 'unconfirmed') unconfirmed += 1;
-      });
-    }
-  });
-
-  const totalEligible = taken + skipped + missed;
-  const overallAdherence = totalEligible > 0 ? Math.round((taken / totalEligible) * 100) : null;
-
-  return {
-    year,
-    monthIndex,
-    totalScheduled,
-    totalEligible,
-    taken,
-    skipped,
-    missed,
-    pending,
-    unconfirmed,
-    overallAdherence,
-    daysWithActivity,
-  };
+  return calculateMonthStatsUtil(year, monthIndex, records);
 }
 
 export const MONTH_NAMES_FULL = [

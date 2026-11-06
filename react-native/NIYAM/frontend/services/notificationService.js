@@ -20,6 +20,13 @@ const REMINDERS_ENABLED_KEY = 'niyam_reminders_enabled';
 const NOTIFICATION_MAP_KEY = 'niyam_medicine_notification_ids';
 const SNOOZE_MAP_KEY = 'niyam_snooze_notification_ids';
 
+// End-of-Day Review Configuration (Phase 23)
+export const EOD_REMINDER_NOTIFICATION_ID = 'niyam_eod_daily_reminder';
+export const EOD_REMINDERS_ENABLED_KEY = 'niyam_eod_reminders_enabled';
+export const EOD_REMINDER_TIME_KEY = 'niyam_eod_reminder_time';
+export const EOD_NOTIFICATION_TYPE = 'end_of_day_review';
+export const DEFAULT_EOD_TIME = '09:00 PM';
+
 // Scheduling horizon for date-bounded medicines (in days)
 export const SCHEDULING_HORIZON_DAYS = 14;
 
@@ -651,8 +658,131 @@ export const notificationService = {
   },
 
   /**
+   * Check if End-of-Day Review reminders are enabled (Phase 23)
+   * @returns {Promise<boolean>}
+   */
+  async isEodReminderEnabled() {
+    try {
+      const val = await authStorage.getItem?.(EOD_REMINDERS_ENABLED_KEY);
+      if (val === null || val === undefined) return true; // Default enabled
+      return val === 'true';
+    } catch (e) {
+      return true;
+    }
+  },
+
+  /**
+   * Get configured End-of-Day Review reminder time (Phase 23)
+   * @returns {Promise<string>} '09:00 PM' by default
+   */
+  async getEodReminderTime() {
+    try {
+      const val = await authStorage.getItem?.(EOD_REMINDER_TIME_KEY);
+      return val || DEFAULT_EOD_TIME;
+    } catch (e) {
+      return DEFAULT_EOD_TIME;
+    }
+  },
+
+  /**
+   * Schedule or update the single daily End-of-Day Review reminder (Phase 23)
+   * Uses distinct notification ID to avoid duplication.
+   * @param {string} [timeStr] e.g. '09:00 PM' or '21:00'
+   * @returns {Promise<string|null>} notification identifier
+   */
+  async scheduleEodReminder(timeStr = null) {
+    if (Platform.OS === 'web') return null;
+
+    try {
+      const timeToUse = timeStr || (await this.getEodReminderTime());
+      const parsed = parseTimeString(timeToUse);
+      if (!parsed) {
+        console.warn('Invalid EOD reminder time:', timeToUse);
+        return null;
+      }
+
+      // Check system permissions
+      const perm = await this.getPermissionStatus();
+      if (!perm.granted) {
+        console.warn('Cannot schedule EOD reminder: Notification permission not granted');
+        return null;
+      }
+
+      // Cancel any existing EOD notification to avoid duplicates
+      await this.cancelEodReminder();
+
+      const trigger = Platform.OS === 'android'
+        ? {
+            type: Notifications.SchedulableTriggerInputTypes.DAILY,
+            hour: parsed.hour,
+            minute: parsed.minute,
+            channelId: CHANNEL_ID,
+          }
+        : {
+            hour: parsed.hour,
+            minute: parsed.minute,
+            repeats: true,
+          };
+
+      const identifier = await Notifications.scheduleNotificationAsync({
+        identifier: EOD_REMINDER_NOTIFICATION_ID,
+        content: {
+          title: 'Your NIYAM daily review',
+          body: "Take a moment to review today's medication schedule.",
+          data: {
+            type: EOD_NOTIFICATION_TYPE,
+          },
+          sound: true,
+          priority: Notifications.AndroidNotificationPriority.HIGH,
+        },
+        trigger,
+      });
+
+      return identifier;
+    } catch (err) {
+      console.warn('Error scheduling EOD reminder:', err.message);
+      return null;
+    }
+  },
+
+  /**
+   * Cancel the daily End-of-Day Review reminder (Phase 23)
+   * Leaves all other medication reminders untouched.
+   */
+  async cancelEodReminder() {
+    if (Platform.OS === 'web') return;
+    try {
+      await Notifications.cancelScheduledNotificationAsync(EOD_REMINDER_NOTIFICATION_ID);
+    } catch (e) {
+      // Ignore if not scheduled
+    }
+  },
+
+  /**
+   * Enable or disable End-of-Day Review reminders and update scheduled notification (Phase 23)
+   * @param {boolean} enabled
+   * @param {string} [timeStr]
+   */
+  async setEodReminderSettings(enabled, timeStr = null) {
+    try {
+      await authStorage.setItem?.(EOD_REMINDERS_ENABLED_KEY, enabled ? 'true' : 'false');
+      if (timeStr) {
+        await authStorage.setItem?.(EOD_REMINDER_TIME_KEY, timeStr);
+      }
+
+      if (enabled) {
+        await this.scheduleEodReminder(timeStr);
+      } else {
+        await this.cancelEodReminder();
+      }
+    } catch (err) {
+      console.warn('Error saving EOD reminder settings:', err);
+    }
+  },
+
+  /**
    * Handles user interaction with a notification (taps and category action buttons)
-   * Supports Taken, Snooze 10m, Skip, and default banner tap.
+   * Supports Taken, Snooze 10m, Skip, End-of-Day Review, and default banner tap.
    * Does NOT mark doses as taken when tapping the notification banner.
    * @param {object} response
    * @param {object} router Expo Router instance
@@ -671,6 +801,13 @@ export const notificationService = {
       const token = await authStorage.getToken();
       if (!token) {
         router.replace('/(auth)/login');
+        return;
+      }
+
+      // Phase 23: End-of-Day Review Notification Tap
+      // Navigates directly to the review screen without altering any dose status
+      if (data.type === EOD_NOTIFICATION_TYPE) {
+        router.push('/end-of-day');
         return;
       }
 

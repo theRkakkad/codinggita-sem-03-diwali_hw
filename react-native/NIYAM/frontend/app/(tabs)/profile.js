@@ -22,17 +22,27 @@ export default function ProfileScreen() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Medication reminder preferences & system permissions (Phase 21)
+  // Medication reminder preferences & system permissions (Phase 21 & Phase 23)
   const [remindersEnabled, setRemindersEnabled] = useState(true);
   const [permissionStatus, setPermissionStatus] = useState('undetermined');
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [isTestingReminder, setIsTestingReminder] = useState(false);
+
+  // End-of-Day review reminder settings (Phase 23)
+  const [eodRemindersEnabled, setEodRemindersEnabled] = useState(true);
+  const [eodReminderTime, setEodReminderTime] = useState('09:00 PM');
 
   // Sync reminder preferences and system permission status
   const loadReminderSettings = useCallback(async () => {
     try {
       const enabled = await notificationService.areRemindersEnabled();
       setRemindersEnabled(enabled);
+
+      const eodEnabled = await notificationService.isEodReminderEnabled();
+      setEodRemindersEnabled(eodEnabled);
+
+      const eodTime = await notificationService.getEodReminderTime();
+      setEodReminderTime(eodTime);
 
       const perm = await notificationService.getPermissionStatus();
       setPermissionStatus(perm.status);
@@ -107,6 +117,54 @@ export default function ProfileScreen() {
       Alert.alert('Test Failed', err.message || 'Could not schedule test notification.');
     } finally {
       setIsTestingReminder(false);
+    }
+  };
+
+  // Phase 23: Toggle End-of-Day Review Reminders
+  const handleToggleEodReminders = async (value) => {
+    try {
+      if (value) {
+        const perm = await notificationService.getPermissionStatus();
+        if (!perm.granted) {
+          if (perm.status === 'denied') {
+            Alert.alert(
+              'Notifications Disabled',
+              'End-of-Day review reminders require notification permission. Open settings to enable notifications?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => notificationService.openSettings() },
+              ]
+            );
+            return;
+          }
+          const requested = await notificationService.requestPermission();
+          if (!requested) {
+            Alert.alert(
+              'Permission Required',
+              'Notifications are required to remind you to review remaining medication doses.'
+            );
+            return;
+          }
+        }
+        await notificationService.setEodReminderSettings(true, eodReminderTime);
+        setEodRemindersEnabled(true);
+        setPermissionGranted(true);
+      } else {
+        await notificationService.setEodReminderSettings(false);
+        setEodRemindersEnabled(false);
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Failed to update End-of-Day reminder settings.');
+    }
+  };
+
+  // Phase 23: Change End-of-Day Review reminder time
+  const handleChangeEodTime = async (timeStr) => {
+    setEodReminderTime(timeStr);
+    try {
+      await notificationService.setEodReminderSettings(eodRemindersEnabled, timeStr);
+    } catch (err) {
+      console.warn('Failed to update EOD time:', err);
     }
   };
 
@@ -338,6 +396,86 @@ export default function ProfileScreen() {
           )}
         </AppCard>
 
+        {/* End-of-Day Review Reminders Settings Card (Phase 23) */}
+        <AppCard style={styles.card}>
+          <View style={styles.reminderHeaderRow}>
+            <View style={{ flex: 1, paddingRight: Spacing.sm }}>
+              <AppText variant="h3" style={styles.cardTitle}>
+                End-of-Day Review
+              </AppText>
+              <AppText variant="secondary" color={Colors.textSecondary} style={styles.reminderSubtitle}>
+                Evening reminder to confirm unanswered doses from today.
+              </AppText>
+            </View>
+            <Switch
+              value={eodRemindersEnabled}
+              onValueChange={handleToggleEodReminders}
+              trackColor={{ false: Colors.surfaceSecondary, true: Colors.primary }}
+              thumbColor={eodRemindersEnabled ? '#FFFFFF' : Colors.textMuted}
+            />
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* Reminder Time Selector */}
+          <View style={styles.eodTimeBlock}>
+            <View style={styles.eodTimeHeader}>
+              <View style={styles.detailIconBox}>
+                <Ionicons name="moon-outline" size={16} color={Colors.primary} />
+              </View>
+              <View style={styles.detailContent}>
+                <AppText variant="caption" color={Colors.textMuted}>Daily Review Time</AppText>
+                <AppText variant="body" color={Colors.textPrimary} style={{ fontWeight: '700' }}>
+                  {eodReminderTime} {eodReminderTime === '09:00 PM' ? '(Default)' : ''}
+                </AppText>
+              </View>
+            </View>
+
+            {eodRemindersEnabled && (
+              <View style={styles.timeChipsRow}>
+                {['08:00 PM', '08:30 PM', '09:00 PM', '09:30 PM', '10:00 PM'].map((timeOption) => (
+                  <Pressable
+                    key={timeOption}
+                    onPress={() => handleChangeEodTime(timeOption)}
+                    style={[
+                      styles.timeChip,
+                      eodReminderTime === timeOption && styles.timeChipActive,
+                    ]}
+                  >
+                    <AppText
+                      variant="caption"
+                      color={eodReminderTime === timeOption ? Colors.primary : Colors.textSecondary}
+                      style={{ fontWeight: eodReminderTime === timeOption ? '700' : '500' }}
+                    >
+                      {timeOption}
+                    </AppText>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </View>
+
+          {/* Open Review Screen Action */}
+          <View style={styles.eodActionRow}>
+            <AppButton
+              title="Open Today's Review Screen"
+              variant="outline"
+              size="sm"
+              icon={<Ionicons name="clipboard-outline" size={14} color={Colors.primary} />}
+              onPress={() => router.push('/end-of-day')}
+              style={{ borderColor: 'rgba(230, 162, 60, 0.4)' }}
+            />
+          </View>
+
+          {/* Clarification banner */}
+          <View style={styles.infoBanner}>
+            <Ionicons name="shield-checkmark-outline" size={16} color={Colors.textMuted} style={{ marginRight: 6, marginTop: 1 }} />
+            <AppText variant="caption" color={Colors.textMuted} style={{ flex: 1, lineHeight: 16 }}>
+              Disabling End-of-Day reminders silences the evening notification but never deletes your dose events or medication history.
+            </AppText>
+          </View>
+        </AppCard>
+
         {/* Sync & Refresh Action */}
         <View style={styles.refreshBlock}>
           <AppButton
@@ -502,5 +640,36 @@ const styles = StyleSheet.create({
   testReminderRow: {
     marginTop: Spacing.md,
     alignItems: 'flex-start',
+  },
+  eodTimeBlock: {
+    paddingVertical: Spacing.xs,
+  },
+  eodTimeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  timeChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+    marginLeft: 40,
+    marginBottom: Spacing.sm,
+  },
+  timeChip: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  timeChipActive: {
+    borderColor: Colors.primary,
+    backgroundColor: 'rgba(230, 162, 60, 0.15)',
+  },
+  eodActionRow: {
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
   },
 });

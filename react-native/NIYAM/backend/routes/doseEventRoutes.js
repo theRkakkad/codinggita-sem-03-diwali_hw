@@ -8,6 +8,8 @@ const {
   markDoseAsSkipped,
   confirmDoseAsMissed,
   markDoseAsUnconfirmed,
+  rolloverPastPendingDoses,
+  syncDailyDoseEvents,
   deleteDoseEvent,
 } = require('../controllers/doseEventController');
 
@@ -15,6 +17,20 @@ const router = express.Router();
 
 // Enforce JWT authentication on all dose event routes
 router.use(authMiddleware);
+
+/**
+ * @route   POST /api/dose-events/sync
+ * @desc    Synchronize and generate scheduled dose events from active medicines
+ * @access  Private
+ */
+router.post('/sync', syncDailyDoseEvents);
+
+/**
+ * @route   POST /api/dose-events/rollover
+ * @desc    Rollover past-day pending doses to unconfirmed
+ * @access  Private
+ */
+router.post('/rollover', rolloverPastPendingDoses);
 
 /**
  * @route   POST /api/dose-events

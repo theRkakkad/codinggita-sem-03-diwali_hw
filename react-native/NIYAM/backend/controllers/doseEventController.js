@@ -563,6 +563,174 @@ const deleteDoseEvent = async (req, res) => {
   }
 };
 
+/**
+ * Rollover past-day pending doses to unconfirmed
+ * POST /api/dose-events/rollover
+ * Protected route
+ * Transitions past-due pending doses to unconfirmed status safely and idempotently.
+ * Never touches taken, skipped, or missed doses.
+ * Preserves original scheduledAt timestamps and enforces user ownership.
+ */
+const rolloverPastPendingDoses = async (req, res) => {
+  try {
+    let cutoff = new Date();
+    if (req.body && req.body.beforeDate) {
+      const parsed = new Date(req.body.beforeDate);
+      if (!isNaN(parsed.getTime())) {
+        cutoff = parsed;
+      }
+    } else {
+      cutoff.setUTCHours(0, 0, 0, 0);
+    }
+
+    const result = await DoseEvent.updateMany(
+      {
+        userId: req.user.id,
+        status: 'pending',
+        scheduledAt: { $lt: cutoff },
+      },
+      {
+        $set: { status: 'unconfirmed' },
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Past pending doses transitioned to unconfirmed.',
+      modifiedCount: result.modifiedCount !== undefined ? result.modifiedCount : result.nModified || 0,
+      cutoff: cutoff.toISOString(),
+    });
+  } catch (error) {
+    console.error('Rollover past pending doses error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected server error occurred during day rollover.',
+    });
+  }
+};
+
+/**
+ * Parse time string (e.g. '08:00 AM', '08:00 PM', '14:30') into hour and minute
+ */
+const parseTimeString = (timeStr) => {
+  if (!timeStr || typeof timeStr !== 'string') return null;
+  const match = timeStr.trim().toUpperCase().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+  if (!match) return null;
+  let hour = parseInt(match[1], 10);
+  const minute = parseInt(match[2], 10);
+  const period = match[3];
+  if (minute < 0 || minute > 59) return null;
+  if (period) {
+    if (hour < 1 || hour > 12) return null;
+    if (period === 'AM' && hour === 12) hour = 0;
+    else if (period === 'PM' && hour !== 12) hour += 12;
+  } else {
+    if (hour < 0 || hour > 23) return null;
+  }
+  return { hour, minute };
+};
+
+/**
+ * Synchronize/ensure scheduled dose events for a given date from active medicines
+ * POST /api/dose-events/sync
+ * Protected route
+ * Checks active medicines for the user and generates any missing pending dose events.
+ * Idempotent, never duplicates, never overwrites taken/skipped/missed doses.
+ */
+const syncDailyDoseEvents = async (req, res) => {
+  try {
+    let dateStr = req.body && req.body.date ? req.body.date : null;
+    if (!dateStr) {
+      const now = new Date();
+      dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
+
+    const [year, month, day] = dateStr.split('-').map(Number);
+    if (!year || !month || !day) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date format. Use YYYY-MM-DD.',
+      });
+    }
+
+    // Set day boundaries in UTC
+    const startOfDay = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    const endOfDay = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+
+    // 1. Fetch user's Active medicines valid for this date
+    // Exclude inactive, paused, completed, or expired medicines
+    const activeMedicines = await Medicine.find({
+      userId: req.user.id,
+      status: 'Active',
+      startDate: { $lte: endOfDay },
+      $or: [
+        { endDate: null },
+        { endDate: { $exists: false } },
+        { endDate: { $gte: startOfDay } },
+      ],
+    });
+
+    let createdCount = 0;
+
+    // 2. For each active medicine with reminder times, ensure a dose event exists
+    for (const med of activeMedicines) {
+      if (med.frequency === 'As needed' || !Array.isArray(med.reminderTimes) || med.reminderTimes.length === 0) {
+        continue;
+      }
+
+      for (const timeStr of med.reminderTimes) {
+        const parsed = parseTimeString(timeStr);
+        if (!parsed) continue;
+
+        const scheduledTime = new Date(Date.UTC(year, month - 1, day, parsed.hour, parsed.minute, 0, 0));
+
+        // Check if event already exists to prevent duplicate insertion
+        const existing = await DoseEvent.findOne({
+          userId: req.user.id,
+          medicineId: med._id,
+          scheduledAt: scheduledTime,
+        });
+
+        if (!existing) {
+          try {
+            await DoseEvent.create({
+              userId: req.user.id,
+              medicineId: med._id,
+              scheduledAt: scheduledTime,
+              status: 'pending',
+            });
+            createdCount++;
+          } catch (dupErr) {
+            // In case of race condition / duplicate compound key, ignore safely
+          }
+        }
+      }
+    }
+
+    // 3. Return all dose events for this date, sorted by scheduledAt
+    const doseEvents = await DoseEvent.find({
+      userId: req.user.id,
+      scheduledAt: { $gte: startOfDay, $lte: endOfDay },
+    })
+      .populate('medicineId', 'name dosage type instructions frequency')
+      .sort({ scheduledAt: 1 });
+
+    return res.status(200).json({
+      success: true,
+      date: dateStr,
+      createdCount,
+      count: doseEvents.length,
+      doseEvents,
+    });
+  } catch (error) {
+    console.error('Sync daily dose events error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to synchronize daily dose events.',
+    });
+  }
+};
+
 module.exports = {
   createDoseEvent,
   getDoseEvents,
@@ -571,6 +739,8 @@ module.exports = {
   markDoseAsSkipped,
   confirmDoseAsMissed,
   markDoseAsUnconfirmed,
+  rolloverPastPendingDoses,
+  syncDailyDoseEvents,
   deleteDoseEvent,
   validateStatusTransition,
 };

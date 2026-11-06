@@ -37,7 +37,7 @@ import { notificationService } from '../../services/notificationService';
 // NIYAM Medication Management Screen (Phase 09 & Phase 19 Integration)
 // Provides searchable, filterable prescription list with interactive details, pause/resume, and delete actions connected to MongoDB.
 export default function MedicinesScreen() {
-  const { highlightId } = useLocalSearchParams();
+  const { highlightId, openAdd } = useLocalSearchParams();
 
   // Local state for medicines list and UI controls
   const [medicines, setMedicines] = useState([]);
@@ -131,6 +131,15 @@ export default function MedicinesScreen() {
       }
     }
   }, [highlightId, medicines]);
+
+  // Handle openAdd navigation parameter
+  useEffect(() => {
+    if (openAdd === 'true') {
+      setFormMode('add');
+      setEditingMedicine(null);
+      setIsFormVisible(true);
+    }
+  }, [openAdd]);
 
   // Add Medicine handler (Phase 10)
   const handleAddMedicine = () => {

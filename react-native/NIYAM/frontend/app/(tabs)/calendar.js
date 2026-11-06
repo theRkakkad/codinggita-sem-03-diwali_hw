@@ -26,12 +26,14 @@ import MonthlyStatisticsCard from '../../components/adherence/MonthlyStatisticsC
 import { doseEventService } from '../../services/doseEventService';
 
 /**
- * Helper to build YYYY-MM-DD date key from Date object
+ * Helper to build YYYY-MM-DD date key from Date object in local timezone
  */
 function toDateKey(date = new Date()) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
+  const dObj = date instanceof Date ? date : new Date(date);
+  if (isNaN(dObj.getTime())) return '';
+  const y = dObj.getFullYear();
+  const m = String(dObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dObj.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
 
@@ -67,6 +69,15 @@ export default function CalendarScreen() {
     setApiError(null);
 
     try {
+      // Day rollover check for past pending doses (Phase 23)
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      await doseEventService.rolloverPastPendingDoses(startOfToday).catch(() => {});
+
+      // Synchronize today's dose events from active medicines (Phase 24)
+      const todayKey = toDateKey(new Date());
+      await doseEventService.syncDailyDoses(todayKey).catch(() => {});
+
       const monthStr = String(currentMonth + 1).padStart(2, '0');
       const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate();
       const startDate = `${currentYear}-${monthStr}-01`;
@@ -93,14 +104,13 @@ export default function CalendarScreen() {
     }, [loadMonthEvents])
   );
 
-  // Group events by YYYY-MM-DD date key
+  // Group events by local YYYY-MM-DD date key
   const activeRecords = useMemo(() => {
     const map = {};
     for (const ev of liveEvents) {
       if (!ev.scheduledAt) continue;
-      const dateKey = typeof ev.scheduledAt === 'string'
-        ? ev.scheduledAt.split('T')[0]
-        : toDateKey(new Date(ev.scheduledAt));
+      const dateKey = toDateKey(ev.scheduledAt);
+      if (!dateKey) continue;
 
       if (!map[dateKey]) map[dateKey] = [];
       map[dateKey].push(ev);

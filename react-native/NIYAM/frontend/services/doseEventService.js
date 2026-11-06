@@ -156,6 +156,31 @@ export const doseEventService = {
   },
 
   /**
+   * Rollover past pending doses to unconfirmed status
+   * POST /api/dose-events/rollover
+   * @param {string|Date} [beforeDate]
+   * @returns {Promise<{ success: boolean, modifiedCount: number }>}
+   */
+  async rolloverPastPendingDoses(beforeDate = null) {
+    const body = beforeDate ? { beforeDate: typeof beforeDate === 'string' ? beforeDate : beforeDate.toISOString() } : {};
+    const response = await api.post('/api/dose-events/rollover', body);
+    return response.data;
+  },
+
+  /**
+   * Synchronize and fetch scheduled dose events for a given date from active medicines
+   * POST /api/dose-events/sync
+   * @param {string} [date] 'YYYY-MM-DD'
+   * @returns {Promise<Array>}
+   */
+  async syncDailyDoses(date = null) {
+    const body = date ? { date } : {};
+    const response = await api.post('/api/dose-events/sync', body);
+    const events = response.data?.doseEvents || [];
+    return events.map(normalizeDoseEvent);
+  },
+
+  /**
    * Delete a dose event
    * DELETE /api/dose-events/:id
    * @param {string} id

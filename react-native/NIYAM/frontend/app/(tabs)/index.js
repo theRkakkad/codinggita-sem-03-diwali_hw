@@ -24,7 +24,9 @@ import AppCard from '../../components/ui/AppCard';
 import { getDynamicDateString } from '../../constants/dashboardData';
 import { useAuth } from '../../context/AuthContext';
 import { doseEventService, formatTime } from '../../services/doseEventService';
+import { medicineService } from '../../services/medicineService';
 import { notificationService, SNOOZE_OPTIONS } from '../../services/notificationService';
+import { calculateAdherence } from '../../utils/adherence';
 
 function getTodayDateKey() {
   const now = new Date();
@@ -43,6 +45,7 @@ export default function DashboardScreen() {
 
   // Local state for doses and dynamic interactions
   const [doses, setDoses] = useState([]);
+  const [userMedicinesCount, setUserMedicinesCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [apiError, setApiError] = useState(null);
@@ -67,7 +70,7 @@ export default function DashboardScreen() {
     return 'Good evening,';
   }, []);
 
-  // Fetch today's dose events from MongoDB
+  // Fetch today's dose events from MongoDB with active routine sync
   const loadDoses = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
       setIsRefreshing(true);
@@ -77,9 +80,19 @@ export default function DashboardScreen() {
     setApiError(null);
 
     try {
+      // 1. Day rollover check for previous days' pending doses (Phase 23)
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      await doseEventService.rolloverPastPendingDoses(startOfToday).catch(() => {});
+
+      // 2. Synchronize and fetch today's doses from active medicines (Phase 24)
       const todayKey = getTodayDateKey();
-      const events = await doseEventService.getDoseEvents({ date: todayKey });
+      const events = await doseEventService.syncDailyDoses(todayKey);
       setDoses(events);
+
+      // 3. Check user medicines count for smart empty state handling
+      const meds = await medicineService.getMedicines().catch(() => []);
+      setUserMedicinesCount(meds.length);
     } catch (err) {
       console.warn('Load today dose events error:', err.message);
       setApiError(err.message || 'Unable to load today schedule from server.');
@@ -95,15 +108,33 @@ export default function DashboardScreen() {
     }, [loadDoses])
   );
 
-  // Calculate adherence and metrics dynamically adhering strictly to product formula
-  const totalDoses = doses.length;
-  const takenCount = doses.filter((d) => d.status === 'taken').length;
-  const pendingCount = doses.filter((d) => d.status === 'pending').length;
-  const skippedCount = doses.filter((d) => d.status === 'skipped').length;
-  const missedCount = doses.filter((d) => d.status === 'missed').length;
-  const unconfirmedCount = doses.filter((d) => d.status === 'unconfirmed').length;
-  const adherencePercentage =
-    totalDoses > 0 ? Math.round((takenCount / totalDoses) * 100) : 0;
+  // Calculate adherence using centralized utility adhering strictly to product formula
+  // Adherence = (Taken / Eligible) * 100 where Eligible = Taken + Skipped + Missed
+  // Pending, Unconfirmed, and Future doses are excluded from eligible denominator
+  const adherenceStats = useMemo(() => calculateAdherence(doses), [doses]);
+  const {
+    total: totalDoses,
+    taken: takenCount,
+    pending: pendingCount,
+    skipped: skippedCount,
+    missed: missedCount,
+    unconfirmed: unconfirmedCount,
+    eligible: eligibleCount,
+    adherenceRate: adherencePercentage,
+  } = adherenceStats;
+
+  // Phase 23: Doses belonging to today whose scheduled time has passed and need a response
+  const unrespondedPastCount = useMemo(() => {
+    const curTime = new Date();
+    return doses.filter((d) => {
+      const sched = new Date(d.scheduledAt);
+      return (
+        !isNaN(sched.getTime()) &&
+        sched <= curTime &&
+        (d.status === 'pending' || d.status === 'unconfirmed')
+      );
+    }).length;
+  }, [doses]);
 
   // Handle incoming notification navigation parameters (activeDoseId or skipDoseId)
   useEffect(() => {
@@ -120,10 +151,25 @@ export default function DashboardScreen() {
     }
   }, [activeDoseId, skipDoseId, doses]);
 
-  // Find primary next dose (first pending dose, or first dose)
-  const nextDose = doses.find((d) => d.status === 'pending') || doses[0] || null;
-  const isNextDoseTaken = nextDose ? nextDose.status === 'taken' : false;
-  const isNextDoseSkipped = nextDose ? nextDose.status === 'skipped' : false;
+  // Phase 24 Next Dose Logic:
+  // Strictly the nearest upcoming pending dose (scheduled at or after now)
+  // Never displays taken, skipped, or confirmed missed doses as upcoming
+  const { nextUpcomingDose, overduePendingCount } = useMemo(() => {
+    const now = new Date();
+    const pending = doses.filter((d) => d.status === 'pending');
+
+    const upcoming = pending
+      .filter((d) => new Date(d.scheduledAt).getTime() >= now.getTime())
+      .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+
+    const overdue = pending
+      .filter((d) => new Date(d.scheduledAt).getTime() < now.getTime());
+
+    return {
+      nextUpcomingDose: upcoming.length > 0 ? upcoming[0] : null,
+      overduePendingCount: overdue.length,
+    };
+  }, [doses]);
 
   // Functional Mark as Taken handler connected to backend
   const handleMarkAsTaken = async (doseId) => {
@@ -416,6 +462,31 @@ export default function DashboardScreen() {
                 {missedCount}
               </AppText>
             </View>
+
+            <View style={styles.metricDivider} />
+
+            {/* Unconfirmed Stat */}
+            <View style={styles.metricItem}>
+              <View style={styles.metricHeaderRow}>
+                <View style={[styles.statusDot, { backgroundColor: Colors.textMuted }]} />
+                <AppText variant="caption" color={Colors.textMuted}>Unconf.</AppText>
+              </View>
+              <AppText variant="h3" color={Colors.textMuted} style={styles.metricCount}>
+                {unconfirmedCount}
+              </AppText>
+            </View>
+          </View>
+
+          {/* Adherence Formula Explanation Note */}
+          <View style={styles.adherenceFormulaNote}>
+            <Ionicons name="information-circle-outline" size={13} color={Colors.textMuted} style={{ marginRight: 4 }} />
+            <AppText variant="caption" color={Colors.textMuted} style={styles.adherenceFormulaText}>
+              {eligibleCount === 0
+                ? (totalDoses === 0
+                  ? 'No doses scheduled for today'
+                  : `0 of ${totalDoses} doses completed today`)
+                : `${takenCount} of ${eligibleCount} eligible doses taken (${totalDoses} scheduled)`}
+            </AppText>
           </View>
         </AppCard>
 
@@ -427,7 +498,7 @@ export default function DashboardScreen() {
               Checking today's schedule...
             </AppText>
           </AppCard>
-        ) : nextDose ? (
+        ) : nextUpcomingDose ? (
           <AppCard style={styles.nextDoseCard}>
             <View style={styles.nextDoseTopRow}>
               <View style={styles.nextDoseTag}>
@@ -436,7 +507,7 @@ export default function DashboardScreen() {
               <View style={styles.timeTag}>
                 <Ionicons name="time-outline" size={13} color={Colors.primary} style={styles.timeIcon} />
                 <AppText variant="caption" color={Colors.primary} style={styles.timeText}>
-                  {nextDose.time || 'Scheduled'}
+                  {nextUpcomingDose.time || formatTime(nextUpcomingDose.scheduledAt)}
                 </AppText>
               </View>
             </View>
@@ -447,10 +518,10 @@ export default function DashboardScreen() {
               </View>
               <View style={styles.medInfoCol}>
                 <AppText variant="h2" style={styles.nextMedName}>
-                  {nextDose.name}
+                  {nextUpcomingDose.name}
                 </AppText>
                 <AppText variant="secondary" color={Colors.textSecondary}>
-                  {nextDose.dosage} • {nextDose.instructions || 'Take as prescribed'}
+                  {nextUpcomingDose.dosage} • {nextUpcomingDose.instructions || 'Take as prescribed'}
                 </AppText>
               </View>
             </View>
@@ -458,62 +529,154 @@ export default function DashboardScreen() {
             <View style={styles.nextDoseSupporting}>
               <Ionicons name="information-circle-outline" size={14} color={Colors.textMuted} />
               <AppText variant="caption" color={Colors.textMuted} style={styles.supportNoteText}>
-                {isNextDoseTaken
-                  ? 'Logged in adherence record'
-                  : isNextDoseSkipped
-                  ? 'Marked as skipped in adherence record'
-                  : 'Your next scheduled dose'}
+                Your next scheduled dose
               </AppText>
             </View>
 
             {/* Action Buttons: Taken, Snooze, Skip */}
             <View style={styles.nextDoseActionRow}>
-              {isNextDoseTaken ? (
-                <View style={styles.completedBadge}>
-                  <Ionicons name="checkmark-circle" size={18} color={Colors.success} style={styles.completedIcon} />
-                  <AppText variant="secondary" color={Colors.success} style={styles.completedText}>
-                    Dose completed for today
-                  </AppText>
-                </View>
-              ) : isNextDoseSkipped ? (
-                <View style={[styles.completedBadge, { borderColor: 'rgba(230, 162, 60, 0.4)' }]}>
-                  <Ionicons name="play-skip-forward-circle" size={18} color={Colors.primary} style={styles.completedIcon} />
-                  <AppText variant="secondary" color={Colors.primary} style={styles.completedText}>
-                    Dose skipped for today
-                  </AppText>
-                </View>
-              ) : (
-                <View style={styles.nextDoseActionCol}>
+              <View style={styles.nextDoseActionCol}>
+                <AppButton
+                  title={processingActionDoseId === (nextUpcomingDose.id || nextUpcomingDose._id) ? "Recording..." : "Mark as taken"}
+                  variant="primary"
+                  size="md"
+                  loading={processingActionDoseId === (nextUpcomingDose.id || nextUpcomingDose._id)}
+                  disabled={processingActionDoseId === (nextUpcomingDose.id || nextUpcomingDose._id)}
+                  icon={<Ionicons name="checkmark" size={18} color="#171A19" />}
+                  onPress={() => handleMarkAsTaken(nextUpcomingDose.id || nextUpcomingDose._id)}
+                  style={styles.markTakenButton}
+                />
+                <View style={styles.nextDoseSubActionsRow}>
                   <AppButton
-                    title={processingActionDoseId === nextDose.id ? "Recording..." : "Mark as taken"}
-                    variant="primary"
-                    size="md"
-                    loading={processingActionDoseId === nextDose.id}
-                    disabled={processingActionDoseId === nextDose.id}
-                    icon={<Ionicons name="checkmark" size={18} color="#171A19" />}
-                    onPress={() => handleMarkAsTaken(nextDose.id)}
-                    style={styles.markTakenButton}
+                    title="Snooze"
+                    variant="secondary"
+                    size="sm"
+                    icon={<Ionicons name="time-outline" size={14} color={Colors.textPrimary} />}
+                    onPress={() => handleOpenSnoozeModal(nextUpcomingDose)}
+                    style={{ flex: 1, marginRight: Spacing.xs }}
                   />
-                  <View style={styles.nextDoseSubActionsRow}>
-                    <AppButton
-                      title="Snooze"
-                      variant="secondary"
-                      size="sm"
-                      icon={<Ionicons name="time-outline" size={14} color={Colors.textPrimary} />}
-                      onPress={() => handleOpenSnoozeModal(nextDose)}
-                      style={{ flex: 1, marginRight: Spacing.xs }}
-                    />
-                    <AppButton
-                      title="Skip"
-                      variant="outline"
-                      size="sm"
-                      icon={<Ionicons name="play-skip-forward" size={14} color={Colors.danger} />}
-                      onPress={() => handleOpenSkipModal(nextDose)}
-                      style={{ flex: 1, borderColor: 'rgba(239, 68, 68, 0.35)' }}
-                    />
-                  </View>
+                  <AppButton
+                    title="Skip"
+                    variant="outline"
+                    size="sm"
+                    icon={<Ionicons name="play-skip-forward" size={14} color={Colors.danger} />}
+                    onPress={() => handleOpenSkipModal(nextUpcomingDose)}
+                    style={{ flex: 1, borderColor: 'rgba(239, 68, 68, 0.35)' }}
+                  />
                 </View>
-              )}
+              </View>
+            </View>
+          </AppCard>
+        ) : overduePendingCount > 0 ? (
+          <AppCard style={styles.nextDoseCard}>
+            <View style={styles.nextDoseTopRow}>
+              <View style={[styles.nextDoseTag, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
+                <AppText style={[styles.nextDoseTagText, { color: Colors.danger }]}>PENDING REVIEW</AppText>
+              </View>
+              <View style={[styles.timeTag, { borderColor: 'rgba(239, 68, 68, 0.3)' }]}>
+                <Ionicons name="alert-circle-outline" size={13} color={Colors.danger} style={styles.timeIcon} />
+                <AppText variant="caption" color={Colors.danger} style={styles.timeText}>
+                  {overduePendingCount} Past Due
+                </AppText>
+              </View>
+            </View>
+
+            <View style={styles.nextDoseDetails}>
+              <View style={[styles.medIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.1)' }]}>
+                <Ionicons name="time-outline" size={26} color={Colors.danger} />
+              </View>
+              <View style={styles.medInfoCol}>
+                <AppText variant="h2" style={styles.nextMedName}>
+                  Past Scheduled Doses
+                </AppText>
+                <AppText variant="secondary" color={Colors.textSecondary}>
+                  {overduePendingCount} dose{overduePendingCount > 1 ? 's' : ''} scheduled earlier today awaiting confirmation.
+                </AppText>
+              </View>
+            </View>
+
+            <View style={styles.nextDoseActionRow}>
+              <AppButton
+                title="Review Past Doses"
+                variant="secondary"
+                size="md"
+                icon={<Ionicons name="calendar-outline" size={16} color={Colors.textPrimary} />}
+                onPress={() => router.push('/end-of-day')}
+                style={styles.markTakenButton}
+              />
+            </View>
+          </AppCard>
+        ) : totalDoses > 0 && takenCount === totalDoses ? (
+          <AppCard style={styles.nextDoseCard}>
+            <View style={styles.nextDoseTopRow}>
+              <View style={[styles.nextDoseTag, { backgroundColor: 'rgba(127, 168, 137, 0.15)' }]}>
+                <AppText style={[styles.nextDoseTagText, { color: Colors.success }]}>ALL CLEAR</AppText>
+              </View>
+            </View>
+            <View style={styles.nextDoseDetails}>
+              <View style={[styles.medIconBox, { backgroundColor: 'rgba(127, 168, 137, 0.1)' }]}>
+                <Ionicons name="checkmark-done" size={26} color={Colors.success} />
+              </View>
+              <View style={styles.medInfoCol}>
+                <AppText variant="h2" style={styles.nextMedName}>
+                  All Done for Today!
+                </AppText>
+                <AppText variant="secondary" color={Colors.textSecondary}>
+                  You've taken all {totalDoses} doses scheduled for today. Great job!
+                </AppText>
+              </View>
+            </View>
+          </AppCard>
+        ) : totalDoses > 0 && pendingCount === 0 ? (
+          <AppCard style={styles.nextDoseCard}>
+            <View style={styles.nextDoseTopRow}>
+              <View style={styles.nextDoseTag}>
+                <AppText style={styles.nextDoseTagText}>COMPLETED</AppText>
+              </View>
+            </View>
+            <View style={styles.nextDoseDetails}>
+              <View style={styles.medIconBox}>
+                <Ionicons name="checkmark-done" size={26} color={Colors.primary} />
+              </View>
+              <View style={styles.medInfoCol}>
+                <AppText variant="h2" style={styles.nextMedName}>
+                  All Doses Logged
+                </AppText>
+                <AppText variant="secondary" color={Colors.textSecondary}>
+                  All {totalDoses} doses for today have been reviewed ({takenCount} taken, {skippedCount} skipped, {missedCount} missed).
+                </AppText>
+              </View>
+            </View>
+          </AppCard>
+        ) : userMedicinesCount === 0 ? (
+          <AppCard style={styles.nextDoseCard}>
+            <View style={styles.nextDoseTopRow}>
+              <View style={styles.nextDoseTag}>
+                <AppText style={styles.nextDoseTagText}>GET STARTED</AppText>
+              </View>
+            </View>
+            <View style={styles.nextDoseDetails}>
+              <View style={styles.medIconBox}>
+                <MaterialCommunityIcons name="pill" size={26} color={Colors.primary} />
+              </View>
+              <View style={styles.medInfoCol}>
+                <AppText variant="h2" style={styles.nextMedName}>
+                  No Medications Added
+                </AppText>
+                <AppText variant="secondary" color={Colors.textSecondary}>
+                  Add your active prescriptions to enable daily dose tracking and smart reminders.
+                </AppText>
+              </View>
+            </View>
+            <View style={styles.nextDoseActionRow}>
+              <AppButton
+                title="Add Medicine"
+                variant="primary"
+                size="md"
+                icon={<Ionicons name="add" size={18} color="#171A19" />}
+                onPress={() => router.push({ pathname: '/(tabs)/medicines', params: { openAdd: 'true' } })}
+                style={styles.markTakenButton}
+              />
             </View>
           </AppCard>
         ) : (
@@ -525,16 +688,45 @@ export default function DashboardScreen() {
             </View>
             <View style={styles.nextDoseDetails}>
               <View style={styles.medIconBox}>
-                <Ionicons name="checkmark-done" size={26} color={Colors.primary} />
+                <Ionicons name="calendar-outline" size={26} color={Colors.primary} />
               </View>
               <View style={styles.medInfoCol}>
                 <AppText variant="h2" style={styles.nextMedName}>
-                  All Done for Today
+                  No Doses Scheduled Today
                 </AppText>
                 <AppText variant="secondary" color={Colors.textSecondary}>
-                  No remaining doses scheduled. Keep up the good work!
+                  You have no scheduled medication intake due for today.
                 </AppText>
               </View>
+            </View>
+          </AppCard>
+        )}
+
+        {/* END-OF-DAY REVIEW CALLOUT CARD (Phase 23) */}
+        {unrespondedPastCount > 0 && (nextUpcomingDose || overduePendingCount === 0) && (
+          <AppCard style={styles.eodCalloutCard}>
+            <View style={styles.eodCalloutRow}>
+              <View style={styles.eodIconBox}>
+                <Ionicons name="moon-outline" size={22} color={Colors.primary} />
+              </View>
+              <View style={styles.eodCalloutTextCol}>
+                <AppText variant="label" color={Colors.primary} style={{ letterSpacing: 0.8 }}>
+                  END-OF-DAY REVIEW
+                </AppText>
+                <AppText variant="h3" color={Colors.textPrimary} style={{ marginTop: 2 }}>
+                  {unrespondedPastCount} dose{unrespondedPastCount > 1 ? 's' : ''} awaiting response
+                </AppText>
+                <AppText variant="caption" color={Colors.textSecondary}>
+                  Confirm doses taken, skipped, or missed earlier today.
+                </AppText>
+              </View>
+              <AppButton
+                title="Review"
+                variant="primary"
+                size="sm"
+                onPress={() => router.push('/end-of-day')}
+                style={styles.eodReviewButton}
+              />
             </View>
           </AppCard>
         )}
@@ -569,20 +761,36 @@ export default function DashboardScreen() {
           ) : doses.length === 0 ? (
             <AppCard style={styles.emptyCard}>
               <View style={styles.emptyIconCircle}>
-                <Ionicons name="calendar-outline" size={26} color={Colors.textMuted} />
+                <Ionicons
+                  name={userMedicinesCount === 0 ? "medical-outline" : "calendar-outline"}
+                  size={26}
+                  color={Colors.textMuted}
+                />
               </View>
               <AppText variant="h3" style={{ textAlign: 'center', marginBottom: 4 }}>
-                No doses scheduled today
+                {userMedicinesCount === 0 ? "No medicines added" : "No doses scheduled today"}
               </AppText>
               <AppText variant="secondary" color={Colors.textSecondary} style={{ textAlign: 'center', marginBottom: 12 }}>
-                You have no scheduled medication intake due for today.
+                {userMedicinesCount === 0
+                  ? "You haven't added any medicines yet. Add your first medicine to get started with daily tracking and reminders."
+                  : "You have no scheduled medication intake due for today."}
               </AppText>
-              <AppButton
-                title="Manage Prescriptions"
-                variant="secondary"
-                size="sm"
-                onPress={() => router.push('/(tabs)/medicines')}
-              />
+              {userMedicinesCount === 0 ? (
+                <AppButton
+                  title="Add Medicine"
+                  variant="primary"
+                  size="sm"
+                  icon={<Ionicons name="add" size={16} color="#171A19" />}
+                  onPress={() => router.push({ pathname: '/(tabs)/medicines', params: { openAdd: 'true' } })}
+                />
+              ) : (
+                <AppButton
+                  title="Manage Prescriptions"
+                  variant="secondary"
+                  size="sm"
+                  onPress={() => router.push('/(tabs)/medicines')}
+                />
+              )}
             </AppCard>
           ) : (
             doses.map((dose) => {
@@ -1316,6 +1524,19 @@ const styles = StyleSheet.create({
     height: 28,
     backgroundColor: Colors.border,
   },
+  adherenceFormulaNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  adherenceFormulaText: {
+    fontSize: 11,
+    color: Colors.textMuted,
+  },
   // Next Dose Card Styles
   nextDoseCard: {
     padding: Spacing.cardPaddingLarge,
@@ -1408,6 +1629,33 @@ const styles = StyleSheet.create({
   },
   completedText: {
     fontWeight: '600',
+  },
+  // End-of-Day Review Callout Styles (Phase 23)
+  eodCalloutCard: {
+    backgroundColor: Colors.surface,
+    borderColor: 'rgba(230, 162, 60, 0.35)',
+    borderWidth: 1,
+    marginBottom: Spacing.lg,
+  },
+  eodCalloutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  eodIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.md,
+    backgroundColor: 'rgba(230, 162, 60, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  eodCalloutTextCol: {
+    flex: 1,
+    paddingRight: Spacing.sm,
+  },
+  eodReviewButton: {
+    paddingHorizontal: Spacing.md,
   },
   // Schedule Section Styles
   sectionHeader: {
