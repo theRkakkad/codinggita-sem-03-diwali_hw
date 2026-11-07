@@ -1,5 +1,5 @@
 const express = require('express');
-const { register, login, getMe } = require('../controllers/authController');
+const { register, login, getMe, updateProfile } = require('../controllers/authController');
 const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -24,5 +24,12 @@ router.post('/login', login);
  * @access  Private (Requires Bearer token)
  */
 router.get('/me', authMiddleware, getMe);
+
+/**
+ * @route   PUT /api/auth/profile
+ * @desc    Update current authenticated user profile (name, avatar)
+ * @access  Private (Requires Bearer token)
+ */
+router.put('/profile', authMiddleware, updateProfile);
 
 module.exports = router;
