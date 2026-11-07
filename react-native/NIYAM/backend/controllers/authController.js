@@ -94,6 +94,7 @@ const register = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        avatar: user.avatar || null,
         createdAt: user.createdAt,
       },
     });
@@ -163,6 +164,7 @@ const login = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        avatar: user.avatar || null,
         createdAt: user.createdAt,
       },
     });
@@ -197,6 +199,7 @@ const getMe = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        avatar: user.avatar || null,
         createdAt: user.createdAt,
       },
     });
@@ -209,9 +212,67 @@ const getMe = async (req, res) => {
   }
 };
 
+/**
+ * Update authenticated user profile (name, avatar)
+ * PUT /api/auth/profile
+ */
+const updateProfile = async (req, res) => {
+  try {
+    const { name, avatar } = req.body;
+    const updateData = {};
+
+    if (typeof name === 'string' && name.trim().length > 0) {
+      updateData.name = name.trim();
+    }
+
+    if (avatar !== undefined) {
+      updateData.avatar = avatar; // base64 string, URL, or null to remove
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid profile fields provided to update.',
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: updateData },
+      { new: true, returnDocument: 'after', runValidators: true }
+    ).select('-passwordHash');
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully.',
+      user: {
+        id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        avatar: updatedUser.avatar || null,
+        createdAt: updatedUser.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error('Update profile error occurred:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected server error occurred while updating profile.',
+    });
+  }
+};
+
 module.exports = {
   register,
   login,
   getMe,
+  updateProfile,
   generateToken,
 };
