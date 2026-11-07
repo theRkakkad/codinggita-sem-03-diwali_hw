@@ -32,6 +32,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Password hash is required'],
     },
+    avatar: {
+      type: String,
+      default: null,
+    },
   },
   {
     timestamps: true, // Automatically manages createdAt and updatedAt
