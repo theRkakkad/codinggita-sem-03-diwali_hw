@@ -16,8 +16,9 @@ const PORT = process.env.PORT || 5000;
 // Enable Cross-Origin Resource Sharing for mobile client communication
 app.use(cors());
 
-// Parse incoming JSON request bodies
-app.use(express.json());
+// Parse incoming JSON request bodies (supporting avatar uploads)
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Mount API routes
 app.use('/api/health', healthRoutes);
