@@ -7,6 +7,7 @@ const {
   getMedicineById,
   updateMedicine,
   deleteMedicine,
+  restoreMedicine,
 } = require('../controllers/medicineController');
 const {
   uploadPrescription,
@@ -49,10 +50,17 @@ router.put('/:id', updateMedicine);
 
 /**
  * @route   DELETE /api/medicines/:id
- * @desc    Delete medication by ID (strictly isolated to owner)
+ * @desc    Delete / archive medication by ID (strictly isolated to owner)
  * @access  Private
  */
 router.delete('/:id', deleteMedicine);
+
+/**
+ * @route   POST /api/medicines/:id/restore
+ * @desc    Restore archived medication back to active routine
+ * @access  Private
+ */
+router.post('/:id/restore', restoreMedicine);
 
 /**
  * Prescription Attachment Routes (Phase 17)
