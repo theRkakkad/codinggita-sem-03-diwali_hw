@@ -187,18 +187,19 @@ const getDoseEvents = async (req, res) => {
 
     // 3. Filter by date or date range
     if (req.query.date) {
-      const parsedDate = new Date(req.query.date);
-      if (isNaN(parsedDate.getTime())) {
+      const dateParts = req.query.date.split('-').map(Number);
+      if (dateParts.length !== 3 || dateParts.some(isNaN)) {
         return res.status(400).json({
           success: false,
           message: 'Invalid date filter format. Use YYYY-MM-DD.',
         });
       }
-      const startOfDay = new Date(req.query.date);
-      startOfDay.setUTCHours(0, 0, 0, 0);
+      const [year, month, day] = dateParts;
+      const tzOffsetMinutes = req.query.timezoneOffset !== undefined ? Number(req.query.timezoneOffset) : 0;
+      const tzOffsetMs = (isNaN(tzOffsetMinutes) ? 0 : tzOffsetMinutes) * 60 * 1000;
 
-      const endOfDay = new Date(req.query.date);
-      endOfDay.setUTCHours(23, 59, 59, 999);
+      const startOfDay = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0) + tzOffsetMs);
+      const endOfDay = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999) + tzOffsetMs);
 
       query.scheduledAt = { $gte: startOfDay, $lte: endOfDay };
     } else if (req.query.startDate || req.query.endDate) {
@@ -653,15 +654,22 @@ const syncDailyDoseEvents = async (req, res) => {
       });
     }
 
-    // Set day boundaries in UTC
-    const startOfDay = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
-    const endOfDay = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+    // Timezone offset in minutes (e.g. -330 for IST UTC+5:30)
+    const tzOffsetMinutes = typeof req.body.timezoneOffset === 'number'
+      ? req.body.timezoneOffset
+      : (req.query && req.query.timezoneOffset !== undefined ? Number(req.query.timezoneOffset) : 0);
+    const tzOffsetMs = (isNaN(tzOffsetMinutes) ? 0 : tzOffsetMinutes) * 60 * 1000;
+
+    // Set local day boundaries converted to UTC
+    const startOfDay = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0) + tzOffsetMs);
+    const endOfDay = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999) + tzOffsetMs);
 
     // 1. Fetch user's Active medicines valid for this date
-    // Exclude inactive, paused, completed, or expired medicines
+    // Exclude inactive, paused, completed, archived, or expired medicines
     const activeMedicines = await Medicine.find({
       userId: req.user.id,
       status: 'Active',
+      isArchived: { $ne: true },
       startDate: { $lte: endOfDay },
       $or: [
         { endDate: null },
@@ -672,17 +680,35 @@ const syncDailyDoseEvents = async (req, res) => {
 
     let createdCount = 0;
 
+    // Purge any pending doses for archived or non-existent medicines
+    const archivedMeds = await Medicine.find({ userId: req.user.id, isArchived: true }, '_id');
+    const archivedIds = archivedMeds.map((m) => m._id);
+    await DoseEvent.deleteMany({
+      userId: req.user.id,
+      status: 'pending',
+      $or: [
+        { medicineId: { $in: archivedIds } },
+        { medicineId: null },
+      ],
+    });
+
     // 2. For each active medicine with reminder times, ensure a dose event exists
     for (const med of activeMedicines) {
       if (med.frequency === 'As needed' || !Array.isArray(med.reminderTimes) || med.reminderTimes.length === 0) {
         continue;
       }
 
+      const validScheduledTimes = [];
+
       for (const timeStr of med.reminderTimes) {
         const parsed = parseTimeString(timeStr);
         if (!parsed) continue;
 
-        const scheduledTime = new Date(Date.UTC(year, month - 1, day, parsed.hour, parsed.minute, 0, 0));
+        // Convert local reminder time to proper UTC timestamp using client timezone offset
+        const scheduledTime = new Date(
+          Date.UTC(year, month - 1, day, parsed.hour, parsed.minute, 0, 0) + tzOffsetMs
+        );
+        validScheduledTimes.push(scheduledTime);
 
         // Check if event already exists to prevent duplicate insertion
         const existing = await DoseEvent.findOne({
@@ -705,15 +731,38 @@ const syncDailyDoseEvents = async (req, res) => {
           }
         }
       }
+
+      // Clean up any obsolete pending doses for this medicine today that do not match current reminder times
+      // (e.g. old buggy doses generated without timezone offset, or times changed by user)
+      if (validScheduledTimes.length > 0) {
+        await DoseEvent.deleteMany({
+          userId: req.user.id,
+          medicineId: med._id,
+          status: 'pending',
+          scheduledAt: {
+            $gte: startOfDay,
+            $lte: endOfDay,
+            $nin: validScheduledTimes,
+          },
+        });
+      }
     }
 
     // 3. Return all dose events for this date, sorted by scheduledAt
-    const doseEvents = await DoseEvent.find({
+    const rawDoseEvents = await DoseEvent.find({
       userId: req.user.id,
       scheduledAt: { $gte: startOfDay, $lte: endOfDay },
     })
-      .populate('medicineId', 'name dosage type instructions frequency')
+      .populate('medicineId', 'name dosage type instructions frequency status isArchived')
       .sort({ scheduledAt: 1 });
+
+    // Pending doses of archived/deleted medicines are strictly excluded from daily dashboard schedule
+    const doseEvents = rawDoseEvents.filter((d) => {
+      if (d.status === 'pending') {
+        return d.medicineId && !d.medicineId.isArchived && d.medicineId.status === 'Active';
+      }
+      return true;
+    });
 
     return res.status(200).json({
       success: true,
