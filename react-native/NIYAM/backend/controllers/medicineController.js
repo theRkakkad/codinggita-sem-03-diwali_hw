@@ -122,16 +122,22 @@ const getMedicines = async (req, res) => {
     // Strictly isolate query to authenticated user's records
     const query = { userId: req.user.id };
 
-    // Status filtering: Active, Paused, Completed
-    if (req.query.status) {
-      const validStatuses = ['Active', 'Paused', 'Completed'];
-      if (!validStatuses.includes(req.query.status)) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid status filter. Supported values: ${validStatuses.join(', ')}`,
-        });
+    if (req.query.archived === 'true' || req.query.status === 'Archived') {
+      query.isArchived = true;
+    } else {
+      query.isArchived = { $ne: true };
+
+      // Status filtering: Active, Paused, Completed
+      if (req.query.status) {
+        const validStatuses = ['Active', 'Paused', 'Completed'];
+        if (!validStatuses.includes(req.query.status)) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid status filter. Supported values: ${validStatuses.join(', ')}`,
+          });
+        }
+        query.status = req.query.status;
       }
-      query.status = req.query.status;
     }
 
     // Name search with regex escaping to prevent ReDoS
@@ -177,10 +183,15 @@ const getMedicineById = async (req, res) => {
     }
 
     // Enforce ownership: query must match both _id and authenticated userId
-    const medicine = await Medicine.findOne({
+    const query = {
       _id: id,
       userId: req.user.id,
-    });
+    };
+    if (req.query.includeArchived !== 'true') {
+      query.isArchived = { $ne: true };
+    }
+
+    const medicine = await Medicine.findOne(query);
 
     if (!medicine) {
       return res.status(404).json({
@@ -293,13 +304,17 @@ const updateMedicine = async (req, res) => {
 };
 
 /**
- * Delete medicine by ID
+ * Delete / Archive medicine by ID
  * DELETE /api/medicines/:id
  * Protected route
+ * By default: safely archives the medicine and purges future pending doses from dashboard,
+ * preserving all past intake logs (taken, skipped, missed, unconfirmed) in History.
+ * If ?permanent=true: permanently deletes medicine and associated events.
  */
 const deleteMedicine = async (req, res) => {
   try {
     const { id } = req.params;
+    const isPermanent = req.query.permanent === 'true';
 
     if (!isValidObjectId(id)) {
       return res.status(400).json({
@@ -308,12 +323,47 @@ const deleteMedicine = async (req, res) => {
       });
     }
 
-    // Atomically find and remove medicine strictly owned by the authenticated user
-    // Note: Cascade deletion of DoseEvent records is intentionally omitted in Phase 16
-    const medicine = await Medicine.findOneAndDelete({
-      _id: id,
-      userId: req.user.id,
-    });
+    if (isPermanent) {
+      const medicine = await Medicine.findOneAndDelete({
+        _id: id,
+        userId: req.user.id,
+      });
+
+      if (!medicine) {
+        return res.status(404).json({
+          success: false,
+          message: 'Medicine not found.',
+        });
+      }
+
+      // Cleanup all associated dose events if permanently deleted
+      await DoseEvent.deleteMany({
+        userId: req.user.id,
+        medicineId: id,
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Medicine permanently deleted.',
+      });
+    }
+
+    // Default: Safe Archival (Move to History)
+    // 1. Mark medicine as archived
+    const medicine = await Medicine.findOneAndUpdate(
+      {
+        _id: id,
+        userId: req.user.id,
+      },
+      {
+        $set: {
+          isArchived: true,
+          status: 'Archived',
+          archivedAt: new Date(),
+        },
+      },
+      { new: true, returnDocument: 'after' }
+    );
 
     if (!medicine) {
       return res.status(404).json({
@@ -322,9 +372,19 @@ const deleteMedicine = async (req, res) => {
       });
     }
 
+    // 2. Remove any pending/future dose events for this medicine so it is removed from the dashboard
+    await DoseEvent.deleteMany({
+      userId: req.user.id,
+      medicineId: id,
+      status: 'pending',
+    });
+
+    // Note: Past doses (taken, skipped, missed, unconfirmed) are preserved intact for History and Adherence
+
     return res.status(200).json({
       success: true,
-      message: 'Medicine deleted successfully.',
+      message: 'Medicine removed from active list and moved to History.',
+      medicine,
     });
   } catch (error) {
     console.error('Delete medicine error:', error.message);
@@ -335,10 +395,63 @@ const deleteMedicine = async (req, res) => {
   }
 };
 
+/**
+ * Restore archived medicine back to active routine
+ * POST /api/medicines/:id/restore
+ * Protected route
+ */
+const restoreMedicine = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid medicine ID format.',
+      });
+    }
+
+    const medicine = await Medicine.findOneAndUpdate(
+      {
+        _id: id,
+        userId: req.user.id,
+      },
+      {
+        $set: {
+          isArchived: false,
+          status: 'Active',
+          archivedAt: null,
+        },
+      },
+      { new: true, returnDocument: 'after' }
+    );
+
+    if (!medicine) {
+      return res.status(404).json({
+        success: false,
+        message: 'Medicine not found.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Medicine restored to active routine.',
+      medicine,
+    });
+  } catch (error) {
+    console.error('Restore medicine error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected server error occurred while restoring medicine.',
+    });
+  }
+};
+
 module.exports = {
   createMedicine,
   getMedicines,
   getMedicineById,
   updateMedicine,
   deleteMedicine,
+  restoreMedicine,
 };
