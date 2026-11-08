@@ -17,7 +17,7 @@ const FREQUENCIES = [
   'As needed',
 ];
 
-const MEDICINE_STATUSES = ['Active', 'Paused', 'Completed'];
+const MEDICINE_STATUSES = ['Active', 'Paused', 'Completed', 'Archived'];
 
 /**
  * Medicine Schema (Phase 14)
@@ -131,6 +131,15 @@ const medicineSchema = new mongoose.Schema(
         values: MEDICINE_STATUSES,
         message: '{VALUE} is not a valid medicine status',
       },
+    },
+    isArchived: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    archivedAt: {
+      type: Date,
+      default: null,
     },
     // Optional prescription attachment metadata (never store binary file data in document)
     prescription: {
