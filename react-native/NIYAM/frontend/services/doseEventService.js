@@ -75,7 +75,11 @@ export const doseEventService = {
    * @returns {Promise<Array>}
    */
   async getDoseEvents(params = {}) {
-    const response = await api.get('/api/dose-events', { params });
+    const enrichedParams = { ...params };
+    if (enrichedParams.date && enrichedParams.timezoneOffset === undefined) {
+      enrichedParams.timezoneOffset = new Date().getTimezoneOffset();
+    }
+    const response = await api.get('/api/dose-events', { params: enrichedParams });
     const events = response.data?.doseEvents || [];
     return events.map(normalizeDoseEvent);
   },
@@ -173,8 +177,9 @@ export const doseEventService = {
    * @param {string} [date] 'YYYY-MM-DD'
    * @returns {Promise<Array>}
    */
-  async syncDailyDoses(date = null) {
-    const body = date ? { date } : {};
+  async syncDailyDoses(date = null, timezoneOffset = null) {
+    const tz = typeof timezoneOffset === 'number' ? timezoneOffset : new Date().getTimezoneOffset();
+    const body = { ...(date ? { date } : {}), timezoneOffset: tz };
     const response = await api.post('/api/dose-events/sync', body);
     const events = response.data?.doseEvents || [];
     return events.map(normalizeDoseEvent);
