@@ -270,14 +270,41 @@ export const medicineService = {
   },
 
   /**
-   * Delete a medicine
+   * Delete or archive a medicine
    * DELETE /api/medicines/:id
    * @param {string} id
+   * @param {boolean} [permanent=false]
    * @returns {Promise<boolean>}
    */
-  async deleteMedicine(id) {
-    const response = await api.delete(`/api/medicines/${id}`);
+  async deleteMedicine(id, permanent = false) {
+    const url = permanent ? `/api/medicines/${id}?permanent=true` : `/api/medicines/${id}`;
+    const response = await api.delete(url);
     return response.data?.success || true;
+  },
+
+  /**
+   * Get all archived / discontinued medicines (History)
+   * GET /api/medicines?archived=true
+   * @param {object} [params]
+   * @returns {Promise<Array>}
+   */
+  async getArchivedMedicines(params = {}) {
+    const response = await api.get('/api/medicines', {
+      params: { ...params, archived: 'true' },
+    });
+    const medicines = response.data?.medicines || [];
+    return medicines.map(normalizeMedicine);
+  },
+
+  /**
+   * Restore an archived medicine back to active routine
+   * POST /api/medicines/:id/restore
+   * @param {string} id
+   * @returns {Promise<object>}
+   */
+  async restoreMedicine(id) {
+    const response = await api.post(`/api/medicines/${id}/restore`);
+    return normalizeMedicine(response.data?.medicine);
   },
 
   /**
