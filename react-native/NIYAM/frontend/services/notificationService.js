@@ -122,43 +122,50 @@ export const notificationService = {
 
     try {
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-          name: CHANNEL_NAME,
-          description: 'Timely reminders for prescribed medication intakes',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#E6A23C',
-          sound: 'default',
-          enableLights: true,
-          enableVibrate: true,
-          showBadge: true,
-        });
+        try {
+          await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+            name: CHANNEL_NAME,
+            description: 'Timely reminders for prescribed medication intakes',
+            importance: Notifications.AndroidImportance.HIGH,
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#E6A23C',
+            enableLights: true,
+            enableVibrate: true,
+            showBadge: true,
+          });
+        } catch (channelErr) {
+          console.warn('Android notification channel setup skipped or not supported in this environment:', channelErr.message);
+        }
       }
 
       // Register interactive notification actions (Taken, Snooze 10m, Skip)
-      await Notifications.setNotificationCategoryAsync(CATEGORY_DOSE_REMINDER, [
-        {
-          identifier: ACTION_TAKEN,
-          buttonTitle: 'Mark Taken',
-          options: {
-            opensAppToForeground: false,
+      try {
+        await Notifications.setNotificationCategoryAsync(CATEGORY_DOSE_REMINDER, [
+          {
+            identifier: ACTION_TAKEN,
+            buttonTitle: 'Mark Taken',
+            options: {
+              opensAppToForeground: false,
+            },
           },
-        },
-        {
-          identifier: ACTION_SNOOZE_10,
-          buttonTitle: 'Snooze 10m',
-          options: {
-            opensAppToForeground: false,
+          {
+            identifier: ACTION_SNOOZE_10,
+            buttonTitle: 'Snooze 10m',
+            options: {
+              opensAppToForeground: false,
+            },
           },
-        },
-        {
-          identifier: ACTION_SKIP,
-          buttonTitle: 'Skip',
-          options: {
-            opensAppToForeground: true,
+          {
+            identifier: ACTION_SKIP,
+            buttonTitle: 'Skip',
+            options: {
+              opensAppToForeground: true,
+            },
           },
-        },
-      ]);
+        ]);
+      } catch (catErr) {
+        console.warn('Notification category setup skipped:', catErr.message);
+      }
     } catch (err) {
       console.warn('Failed to configure notification channel/category:', err);
     }
@@ -342,12 +349,18 @@ export const notificationService = {
       try {
         if (!hasEndDate || !isEndDateValid) {
           // Open-ended routine: schedule repeating daily notification at specified hour & minute
-          const trigger = {
-            type: Notifications.SchedulableTriggerInputTypes.DAILY,
-            hour,
-            minute,
-            channelId: CHANNEL_ID,
-          };
+          const trigger = Platform.OS === 'android'
+            ? {
+                type: Notifications.SchedulableTriggerInputTypes.DAILY,
+                hour,
+                minute,
+                channelId: CHANNEL_ID,
+              }
+            : {
+                hour,
+                minute,
+                repeats: true,
+              };
 
           const notificationId = await Notifications.scheduleNotificationAsync({
             content: {
