@@ -76,6 +76,23 @@ export const authService = {
   },
 
   /**
+   * Update authenticated user profile (name, avatar)
+   * PUT /api/auth/profile
+   * @param {object} updates
+   * @param {string} [updates.name]
+   * @param {string|null} [updates.avatar]
+   * @returns {Promise<object>}
+   */
+  async updateProfile(updates) {
+    const response = await api.put('/api/auth/profile', updates);
+    const { user } = response.data;
+    if (user) {
+      await authStorage.setUser(user);
+    }
+    return user;
+  },
+
+  /**
    * Terminate active session and purge secure credentials
    * @returns {Promise<void>}
    */
