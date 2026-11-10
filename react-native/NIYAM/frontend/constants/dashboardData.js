@@ -52,11 +52,27 @@ export const INITIAL_DOSES = [
 ];
 
 // Helper to format dynamic current date without hardcoding
-export function getDynamicDateString() {
-  const now = new Date();
+export function getDynamicDateString(date = new Date()) {
+  const now = date instanceof Date ? date : new Date();
   return now.toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'short',
     day: 'numeric',
   });
+}
+
+// Dynamic real-time greeting based on hour of day
+export function getTimeAwareGreeting(date = new Date()) {
+  const now = date instanceof Date ? date : new Date();
+  const hour = now.getHours();
+  if (hour >= 5 && hour < 12) {
+    return 'Good morning,';
+  }
+  if (hour >= 12 && hour < 17) {
+    return 'Good afternoon,';
+  }
+  if (hour >= 17 && hour < 22) {
+    return 'Good evening,';
+  }
+  return 'Good night,';
 }
