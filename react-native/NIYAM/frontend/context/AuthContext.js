@@ -96,6 +96,15 @@ export function AuthProvider({ children }) {
     }
   };
 
+  /**
+   * Update authenticated user profile (name, avatar)
+   */
+  const updateProfile = async (updates) => {
+    const updatedUser = await authService.updateProfile(updates);
+    setUser(updatedUser);
+    return updatedUser;
+  };
+
   const value = {
     user,
     token,
@@ -105,6 +114,7 @@ export function AuthProvider({ children }) {
     register,
     logout,
     refreshProfile,
+    updateProfile,
     restoreSession,
   };
 
