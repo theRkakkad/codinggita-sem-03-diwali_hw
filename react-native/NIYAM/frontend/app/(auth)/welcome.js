@@ -22,164 +22,49 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 export default function NamasteWelcomeScreen() {
   const router = useRouter();
 
-  // Animation values using React Native's native Animated driver
-  const glowAnim = useRef(new Animated.Value(0)).current;
+  // Animation values initialized directly to fully visible state to avoid duplicate intro animations
+  const glowAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const ringScaleAnim = useRef(new Animated.Value(0.8)).current;
-  const ringOpacityAnim = useRef(new Animated.Value(0)).current;
+  const ringScaleAnim = useRef(new Animated.Value(1)).current;
+  const ringOpacityAnim = useRef(new Animated.Value(0.6)).current;
 
-  const symbolScaleAnim = useRef(new Animated.Value(0.6)).current;
-  const symbolOpacityAnim = useRef(new Animated.Value(0)).current;
+  const symbolScaleAnim = useRef(new Animated.Value(1)).current;
+  const symbolOpacityAnim = useRef(new Animated.Value(1)).current;
 
-  const hindiOpacityAnim = useRef(new Animated.Value(0)).current;
-  const hindiTranslateAnim = useRef(new Animated.Value(14)).current;
+  const hindiOpacityAnim = useRef(new Animated.Value(1)).current;
+  const hindiTranslateAnim = useRef(new Animated.Value(0)).current;
 
-  const englishOpacityAnim = useRef(new Animated.Value(0)).current;
-  const englishTranslateAnim = useRef(new Animated.Value(14)).current;
+  const englishOpacityAnim = useRef(new Animated.Value(1)).current;
+  const englishTranslateAnim = useRef(new Animated.Value(0)).current;
 
-  const supportOpacityAnim = useRef(new Animated.Value(0)).current;
-  const supportTranslateAnim = useRef(new Animated.Value(12)).current;
+  const supportOpacityAnim = useRef(new Animated.Value(1)).current;
+  const supportTranslateAnim = useRef(new Animated.Value(0)).current;
 
-  const ctaOpacityAnim = useRef(new Animated.Value(0)).current;
-  const ctaTranslateAnim = useRef(new Animated.Value(20)).current;
+  const ctaOpacityAnim = useRef(new Animated.Value(1)).current;
+  const ctaTranslateAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Check if user has reduced-motion enabled in device accessibility settings
-    AccessibilityInfo.isReduceMotionEnabled().then((isReduced) => {
-      if (isReduced) {
-        // Skip motion for accessibility: immediately reveal all elements
-        glowAnim.setValue(1);
-        ringOpacityAnim.setValue(1);
-        ringScaleAnim.setValue(1);
-        symbolOpacityAnim.setValue(1);
-        symbolScaleAnim.setValue(1);
-        hindiOpacityAnim.setValue(1);
-        hindiTranslateAnim.setValue(0);
-        englishOpacityAnim.setValue(1);
-        englishTranslateAnim.setValue(0);
-        supportOpacityAnim.setValue(1);
-        supportTranslateAnim.setValue(0);
-        ctaOpacityAnim.setValue(1);
-        ctaTranslateAnim.setValue(0);
-        return;
-      }
-
-      // 1. Choreographed cinematic entrance sequence
+    // Serene breathing ambient pulse loop on the center emblem
+    const pulseLoop = Animated.loop(
       Animated.sequence([
-        // Step 1: Ambient Opening Glow & Ring
-        Animated.parallel([
-          Animated.timing(glowAnim, {
-            toValue: 1,
-            duration: 650,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(ringOpacityAnim, {
-            toValue: 0.6,
-            duration: 700,
-            useNativeDriver: true,
-          }),
-          Animated.timing(ringScaleAnim, {
-            toValue: 1.1,
-            duration: 700,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ]),
+        Animated.timing(pulseAnim, {
+          toValue: 1.12,
+          duration: 2200,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1.0,
+          duration: 2200,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulseLoop.start();
 
-        // Step 2 & 3: Namaste Symbol & Hindi Greeting reveal
-        Animated.parallel([
-          Animated.timing(symbolOpacityAnim, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(symbolScaleAnim, {
-            toValue: 1,
-            duration: 500,
-            easing: Easing.out(Easing.back(1.2)),
-            useNativeDriver: true,
-          }),
-          Animated.timing(hindiOpacityAnim, {
-            toValue: 1,
-            duration: 500,
-            delay: 150,
-            useNativeDriver: true,
-          }),
-          Animated.timing(hindiTranslateAnim, {
-            toValue: 0,
-            duration: 500,
-            delay: 150,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ]),
-
-        // Step 4: English Greeting & Welcome to NIYAM
-        Animated.parallel([
-          Animated.timing(englishOpacityAnim, {
-            toValue: 1,
-            duration: 450,
-            useNativeDriver: true,
-          }),
-          Animated.timing(englishTranslateAnim, {
-            toValue: 0,
-            duration: 450,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ]),
-
-        // Step 5: Supporting Text & Tagline
-        Animated.parallel([
-          Animated.timing(supportOpacityAnim, {
-            toValue: 1,
-            duration: 400,
-            useNativeDriver: true,
-          }),
-          Animated.timing(supportTranslateAnim, {
-            toValue: 0,
-            duration: 400,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ]),
-
-        // Step 6: Call-To-Action buttons slide up from bottom
-        Animated.parallel([
-          Animated.timing(ctaOpacityAnim, {
-            toValue: 1,
-            duration: 400,
-            useNativeDriver: true,
-          }),
-          Animated.timing(ctaTranslateAnim, {
-            toValue: 0,
-            duration: 400,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ]),
-      ]).start(() => {
-        // 2. Start serene breathing ambient pulse loop once intro is complete
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(pulseAnim, {
-              toValue: 1.15,
-              duration: 2200,
-              easing: Easing.inOut(Easing.ease),
-              useNativeDriver: true,
-            }),
-            Animated.timing(pulseAnim, {
-              toValue: 1.0,
-              duration: 2200,
-              easing: Easing.inOut(Easing.ease),
-              useNativeDriver: true,
-            }),
-          ])
-        ).start();
-      });
-    });
-  }, []);
+    return () => pulseLoop.stop();
+  }, [pulseAnim]);
 
   // Navigation handlers
   const handleBeginJourney = () => {
