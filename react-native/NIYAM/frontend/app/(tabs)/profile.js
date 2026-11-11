@@ -1,8 +1,18 @@
 import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Alert, ActivityIndicator, Switch } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+  Switch,
+  Pressable,
+  Image,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 
 import { Colors } from '../../constants/colors';
 import { Spacing } from '../../constants/spacing';
@@ -18,9 +28,10 @@ import { medicineService } from '../../services/medicineService';
 // Profile & Account Screen connected to authenticated User session
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, logout, refreshProfile } = useAuth();
+  const { user, logout, refreshProfile, updateProfile } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // Medication reminder preferences & system permissions (Phase 21 & Phase 23)
   const [remindersEnabled, setRemindersEnabled] = useState(true);
@@ -168,6 +179,101 @@ export default function ProfileScreen() {
     }
   };
 
+  // Profile Picture management (Camera & Library selection)
+  const handleAvatarPress = () => {
+    const options = [
+      {
+        text: 'Choose from Library',
+        onPress: () => pickImage(false),
+      },
+      {
+        text: 'Take Photo',
+        onPress: () => pickImage(true),
+      },
+    ];
+
+    if (user?.avatar) {
+      options.push({
+        text: 'Remove Photo',
+        style: 'destructive',
+        onPress: removeAvatar,
+      });
+    }
+
+    options.push({ text: 'Cancel', style: 'cancel' });
+
+    Alert.alert('Profile Picture', 'Add or change your profile picture', options);
+  };
+
+  const pickImage = async (useCamera = false) => {
+    try {
+      if (useCamera) {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            'Camera Permission Needed',
+            'Please allow camera access in device settings to take a profile picture.'
+          );
+          return;
+        }
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            'Photo Library Permission Needed',
+            'Please allow photo library access in device settings to select a profile picture.'
+          );
+          return;
+        }
+      }
+
+      setIsUploadingPhoto(true);
+
+      const options = {
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.6,
+        base64: true,
+      };
+
+      const result = useCamera
+        ? await ImagePicker.launchCameraAsync(options)
+        : await ImagePicker.launchImageLibraryAsync(options);
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        setIsUploadingPhoto(false);
+        return;
+      }
+
+      const asset = result.assets[0];
+      const mime = asset.mimeType || 'image/jpeg';
+      const base64Uri = asset.base64?.startsWith('data:')
+        ? asset.base64
+        : `data:${mime};base64,${asset.base64}`;
+
+      await updateProfile({ avatar: base64Uri });
+      Alert.alert('Success', 'Profile picture updated successfully.');
+    } catch (err) {
+      console.warn('Failed to update profile picture:', err);
+      Alert.alert('Error', err.message || 'Failed to update profile picture.');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    try {
+      setIsUploadingPhoto(true);
+      await updateProfile({ avatar: null });
+      Alert.alert('Removed', 'Profile picture removed.');
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Failed to remove profile picture.');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
   const handleLogout = () => {
     Alert.alert(
       'Sign Out',
@@ -230,13 +336,35 @@ export default function ProfileScreen() {
         {/* User Identity Card */}
         <AppCard style={styles.userCard}>
           <View style={styles.avatarRow}>
-            <View style={styles.avatar}>
-              <AppText style={styles.avatarText}>
-                {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
-              </AppText>
-            </View>
+            <Pressable
+              onPress={handleAvatarPress}
+              disabled={isUploadingPhoto}
+              style={({ pressed }) => [
+                styles.avatarWrapper,
+                pressed && { opacity: 0.8 },
+              ]}
+              accessibilityLabel="Change profile picture"
+            >
+              <View style={styles.avatar}>
+                {user?.avatar ? (
+                  <Image source={{ uri: user.avatar }} style={styles.avatarPhoto} />
+                ) : (
+                  <AppText style={styles.avatarText}>
+                    {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                  </AppText>
+                )}
+                {isUploadingPhoto && (
+                  <View style={styles.avatarLoadingOverlay}>
+                    <ActivityIndicator size="small" color={Colors.white} />
+                  </View>
+                )}
+              </View>
+              <View style={styles.cameraBadge}>
+                <Ionicons name="camera" size={13} color={Colors.white} />
+              </View>
+            </Pressable>
             <View style={styles.userInfo}>
-              <AppText variant="h2" style={styles.userName}>
+              <AppText variant="h2" style={styles.userName} numberOfLines={1} ellipsizeMode="tail">
                 {user?.name || 'NIYAM User'}
               </AppText>
               <AppText variant="secondary" color={Colors.textSecondary}>
@@ -476,6 +604,27 @@ export default function ProfileScreen() {
           </View>
         </AppCard>
 
+        {/* Medication History Navigation Card */}
+        <AppCard style={styles.card}>
+          <View style={styles.historyCardRow}>
+            <View style={{ flex: 1, paddingRight: Spacing.sm }}>
+              <AppText variant="h3" style={styles.cardTitle}>
+                Medication History
+              </AppText>
+              <AppText variant="secondary" color={Colors.textSecondary} style={{ marginTop: 2 }}>
+                View discontinued medications and complete historical dose intake logs.
+              </AppText>
+            </View>
+            <AppButton
+              title="Open"
+              variant="outline"
+              size="sm"
+              icon={<Ionicons name="time-outline" size={14} color={Colors.primary} />}
+              onPress={() => router.push('/history')}
+            />
+          </View>
+        </AppCard>
+
         {/* Sync & Refresh Action */}
         <View style={styles.refreshBlock}>
           <AppButton
@@ -534,16 +683,44 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  avatarWrapper: {
+    position: 'relative',
+    marginRight: Spacing.md,
+  },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: Colors.surfaceSecondary,
     borderWidth: 2,
     borderColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: Spacing.md,
+    overflow: 'hidden',
+  },
+  avatarPhoto: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 30,
+  },
+  avatarLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.surface,
   },
   avatarText: {
     fontSize: 22,
@@ -595,6 +772,11 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
     marginVertical: Spacing.xxs,
+  },
+  historyCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   refreshBlock: {
     marginBottom: Spacing.md,
