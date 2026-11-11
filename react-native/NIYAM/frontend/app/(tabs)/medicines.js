@@ -448,12 +448,12 @@ export default function MedicinesScreen() {
     const id = med.id || med._id;
 
     Alert.alert(
-      'Delete Medicine',
-      `Are you sure you want to remove ${med.name} from your medication list?`,
+      'Remove Medicine',
+      `Remove ${med.name} from your active routine? It will be moved to History, removing pending reminders while keeping all past intake logs.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Remove',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -468,7 +468,7 @@ export default function MedicinesScreen() {
 
               setMedicines((prev) => prev.filter((item) => item.id !== id && item._id !== id));
               setSelectedMedicine(null);
-              setFeedbackBanner(`Removed ${med.name} from your list.`);
+              setFeedbackBanner(`Moved ${med.name} to History.`);
               setTimeout(() => setFeedbackBanner(null), 3500);
             } catch (err) {
               if (err.status === 404) {
@@ -526,15 +526,25 @@ export default function MedicinesScreen() {
             </View>
           </View>
 
-          {/* Add Medicine Action */}
-          <AppButton
-            title="Add"
-            variant="primary"
-            size="sm"
-            icon={<Ionicons name="add" size={16} color="#171A19" />}
-            onPress={handleAddMedicine}
-            style={styles.addButton}
-          />
+          {/* Header Actions: History & Add */}
+          <View style={styles.headerActions}>
+            <AppButton
+              title="History"
+              variant="outline"
+              size="sm"
+              icon={<Ionicons name="time-outline" size={15} color={Colors.primary} />}
+              onPress={() => router.push('/history')}
+              style={styles.historyButton}
+            />
+            <AppButton
+              title="Add"
+              variant="primary"
+              size="sm"
+              icon={<Ionicons name="add" size={16} color="#171A19" />}
+              onPress={handleAddMedicine}
+              style={styles.addButton}
+            />
+          </View>
         </View>
 
         {/* API Error Banner */}
@@ -1149,9 +1159,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 11,
   },
-  addButton: {
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: Spacing.xs,
   },
+  historyButton: {
+    marginRight: Spacing.xs,
+  },
+  addButton: {},
   // Feedback Banner
   apiErrorBanner: {
     flexDirection: 'row',
