@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   TextInput,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -21,7 +22,7 @@ import { Typography } from '../../constants/typography';
 import AppText from '../../components/ui/AppText';
 import AppButton from '../../components/ui/AppButton';
 import AppCard from '../../components/ui/AppCard';
-import { getDynamicDateString } from '../../constants/dashboardData';
+import { getDynamicDateString, getTimeAwareGreeting } from '../../constants/dashboardData';
 import { useAuth } from '../../context/AuthContext';
 import { doseEventService, formatTime } from '../../services/doseEventService';
 import { medicineService } from '../../services/medicineService';
@@ -59,16 +60,25 @@ export default function DashboardScreen() {
   const [skipModalDose, setSkipModalDose] = useState(null);
   const [skipReasonInput, setSkipReasonInput] = useState('');
 
-  // Dynamic current date
-  const currentDateString = getDynamicDateString();
+  // Dynamic current date and live time-aware greeting
+  const [currentTime, setCurrentTime] = useState(() => new Date());
 
-  // Time-aware greeting
-  const greeting = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning,';
-    if (hour < 17) return 'Good afternoon,';
-    return 'Good evening,';
+  // Update time on screen focus and every 30 seconds for real-time accuracy
+  useFocusEffect(
+    useCallback(() => {
+      setCurrentTime(new Date());
+    }, [])
+  );
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 30000);
+    return () => clearInterval(timer);
   }, []);
+
+  const currentDateString = useMemo(() => getDynamicDateString(currentTime), [currentTime]);
+  const greeting = useMemo(() => getTimeAwareGreeting(currentTime), [currentTime]);
 
   // Fetch today's dose events from MongoDB with active routine sync
   const loadDoses = useCallback(async (isRefresh = false) => {
@@ -88,11 +98,19 @@ export default function DashboardScreen() {
       // 2. Synchronize and fetch today's doses from active medicines (Phase 24)
       const todayKey = getTodayDateKey();
       const events = await doseEventService.syncDailyDoses(todayKey);
-      setDoses(events);
+      // Ensure pending doses of deleted/archived medicines never appear on dashboard
+      const activeDoses = events.filter((d) => {
+        if (d.status === 'pending') {
+          return d.medicineId && d.name !== 'Medication';
+        }
+        return true;
+      });
+      setDoses(activeDoses);
 
-      // 3. Check user medicines count for smart empty state handling
+      // 3. Check user medicines count for smart empty state handling and sync local reminders
       const meds = await medicineService.getMedicines().catch(() => []);
       setUserMedicinesCount(meds.length);
+      notificationService.rescheduleAllActiveMedicines(meds).catch(() => {});
     } catch (err) {
       console.warn('Load today dose events error:', err.message);
       setApiError(err.message || 'Unable to load today schedule from server.');
@@ -317,45 +335,56 @@ export default function DashboardScreen() {
       >
         {/* A. HEADER SECTION */}
         <View style={styles.header}>
-          <View style={styles.headerTextCol}>
-            <View style={styles.dateRow}>
+          {/* Top Bar: Date Badge on Left, Avatar on Right */}
+          <View style={styles.headerTopRow}>
+            <View style={styles.dateBadge}>
               <Ionicons name="calendar-outline" size={13} color={Colors.primary} style={styles.calendarIcon} />
               <AppText variant="caption" color={Colors.primary} style={styles.dateText}>
                 {currentDateString}
               </AppText>
             </View>
 
-            <View style={styles.greetingRow}>
-              <AppText variant="h2" color={Colors.textSecondary} style={styles.greetingText}>
-                {greeting}{' '}
-              </AppText>
-              <AppText variant="h1" color={Colors.textPrimary} style={styles.userNameText}>
-                {user?.name || 'Friend'}
-              </AppText>
-            </View>
+            {/* Profile / Avatar Action */}
+            <Pressable
+              onPress={() => router.push('/(tabs)/profile')}
+              hitSlop={10}
+              style={({ pressed }) => [
+                styles.avatarButton,
+                pressed && styles.avatarPressed,
+              ]}
+              accessibilityLabel="Open user profile"
+            >
+              <View style={styles.avatarInner}>
+                {user?.avatar ? (
+                  <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
+                ) : (
+                  <AppText style={styles.avatarInitial}>
+                    {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                  </AppText>
+                )}
+              </View>
+              <View style={styles.onlineBadge} />
+            </Pressable>
+          </View>
 
+          {/* Greeting & User Name: Full-width stacked hierarchy with zero risk of overlap */}
+          <View style={styles.greetingContent}>
+            <AppText variant="h2" color={Colors.textSecondary} style={styles.greetingText}>
+              {greeting}
+            </AppText>
+            <AppText
+              variant="h1"
+              color={Colors.textPrimary}
+              style={styles.userNameText}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {user?.name || 'Friend'}
+            </AppText>
             <AppText variant="secondary" color={Colors.textSecondary} style={styles.subtitleText}>
               Let's stay consistent today.
             </AppText>
           </View>
-
-          {/* Profile / Avatar Action */}
-          <Pressable
-            onPress={() => router.push('/(tabs)/profile')}
-            hitSlop={10}
-            style={({ pressed }) => [
-              styles.avatarButton,
-              pressed && styles.avatarPressed,
-            ]}
-            accessibilityLabel="Open user profile"
-          >
-            <View style={styles.avatarInner}>
-              <AppText style={styles.avatarInitial}>
-                {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
-              </AppText>
-            </View>
-            <View style={styles.onlineBadge} />
-          </Pressable>
         </View>
 
         {/* API Error Banner */}
@@ -1351,44 +1380,51 @@ const styles = StyleSheet.create({
   },
   // Header Styles
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
     marginBottom: Spacing.lg,
   },
-  headerTextCol: {
-    flex: 1,
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.xs,
   },
-  dateRow: {
+  dateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Spacing.xxs,
+    backgroundColor: Colors.primary + '12',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: Colors.primary + '25',
   },
   calendarIcon: {
-    marginRight: 4,
+    marginRight: 5,
   },
   dateText: {
     fontWeight: '600',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
-  greetingRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginTop: 2,
+  greetingContent: {
+    marginTop: Spacing.xs,
   },
   greetingText: {
     fontWeight: Typography.weight.regular,
+    fontSize: Typography.size.xl,
+    lineHeight: Typography.lineHeight.xl,
   },
   userNameText: {
     fontWeight: Typography.weight.bold,
+    fontSize: Typography.size.xxl,
+    lineHeight: Typography.lineHeight.xxl,
+    marginTop: 2,
   },
   subtitleText: {
-    marginTop: 2,
+    marginTop: 4,
     lineHeight: 20,
   },
   avatarButton: {
     position: 'relative',
-    marginLeft: Spacing.md,
   },
   avatarInner: {
     width: 44,
@@ -1399,6 +1435,12 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22,
   },
   avatarInitial: {
     color: Colors.primary,
