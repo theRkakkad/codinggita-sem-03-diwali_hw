@@ -296,7 +296,7 @@ async function runMedicineTests() {
         frequency: 'Once daily',
         reminderTimes: ['08:00 AM'],
         startDate: '2026-11-01',
-        status: 'Archived', // Invalid status
+        status: 'InvalidStatus', // Invalid status
       },
     });
     assert(resBadStatus.statusCode === 400, 'Invalid status returns HTTP 400');

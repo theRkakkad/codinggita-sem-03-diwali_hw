@@ -129,6 +129,7 @@ export const notificationService = {
             importance: Notifications.AndroidImportance.HIGH,
             vibrationPattern: [0, 250, 250, 250],
             lightColor: '#E6A23C',
+            sound: 'default',
             enableLights: true,
             enableVibrate: true,
             showBadge: true,

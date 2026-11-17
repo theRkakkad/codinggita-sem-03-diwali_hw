@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Medicine = require('../models/Medicine');
+const DoseEvent = require('../models/DoseEvent');
 
 /**
  * Validate MongoDB ObjectId format
