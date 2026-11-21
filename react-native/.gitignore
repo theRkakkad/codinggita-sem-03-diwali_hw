@@ -35,3 +35,10 @@ yarn-error.*
 # OS files
 .DS_Store
 Thumbs.db
+
+# Test scripts
+test-*.js
+test-*.ts
+*.test.js
+*.test.ts
+
