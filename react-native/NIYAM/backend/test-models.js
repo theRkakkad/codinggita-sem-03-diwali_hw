@@ -230,7 +230,7 @@ async function runTests() {
     frequency: 'Once daily',
     reminderTimes: ['09:00 AM'],
     startDate: new Date(),
-    status: 'Archived', // Unsupported
+    status: 'Discontinued', // Unsupported
   });
   const errBadStatus = await validateDoc(medBadStatus);
   assert(errBadStatus && errBadStatus.errors['status'], 'Invalid medicine status fails validation');
